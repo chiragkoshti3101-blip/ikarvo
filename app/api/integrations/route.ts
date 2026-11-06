@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { featureStatus, envValue } from '@/lib/env';
+import { requireActor } from '@/lib/auth';
 import { publisherStatus } from '@/lib/publishers';
 import { githubSession, vercelSession } from '@/lib/integrations';
 import { googleAccess, googleScopes, YOUTUBE_SCOPE } from '@/lib/google';
@@ -10,6 +11,7 @@ import { TTS, ttsMissing, type TtsProvider } from '@/lib/tts';
 import { CAPTIONS, captionsMissing, type CaptionProvider } from '@/lib/captions';
 import { MUSIC, musicMissing, type MusicProvider } from '@/lib/music';
 import { xMode } from '@/lib/tokens';
+import { listMcpConnections, mcpStorageReadyForEnv } from '@/lib/mcp/connections';
 export const dynamic = 'force-dynamic'; export const runtime = 'nodejs';
 
 /**
@@ -29,6 +31,17 @@ export async function GET() {
   if (pub.social.linkedin?.ok) warn.linkedin = 'LinkedIn member tokens last 60 days and cannot be refreshed without partner access. Re-issue LINKEDIN_ACCESS_TOKEN before it expires.';
   if (pub.cms.medium?.ok) warn.medium = 'Medium no longer issues new integration tokens; existing tokens still work.';
   if (envValue('LINKEDIN_API_VERSION') && Number(envValue('LINKEDIN_API_VERSION')) < 202511) warn.linkedinVersion = `LINKEDIN_API_VERSION=${envValue('LINKEDIN_API_VERSION')} is sunset. Remove it to use 202610.`;
+  const mcpStore = mcpStorageReadyForEnv(!f.preview && f.supabase.ok);
+  let mcp: { storageReady: boolean; missing: string[]; connected: number; total: number } = { storageReady: mcpStore.ok, missing: mcpStore.missing, connected: 0, total: 0 };
+  if (mcpStore.ok) {
+    const actor = await requireActor();
+    if (!(actor instanceof NextResponse)) {
+      try {
+        const rows = await listMcpConnections(actor);
+        mcp = { storageReady: true, missing: [], connected: rows.filter(r => r.status === 'connected').length, total: rows.length };
+      } catch { /* schema not migrated yet */ }
+    }
+  }
   return NextResponse.json({
     preview: f.preview, features: f, warn,
     connections: { github: { configured: f.github.ok, connected: !!gh, login: gh?.login ?? null }, vercel: { configured: f.vercel.ok, connected: !!vc, source: vc?.source ?? null }, google: { configured: f.google.ok, ...google } },
@@ -40,5 +53,6 @@ export async function GET() {
     captions: Object.fromEntries(Object.keys(CAPTIONS).map(k => [k, { label: CAPTIONS[k as CaptionProvider].label, missing: captionsMissing(k as CaptionProvider) }])),
     music: Object.fromEntries(Object.keys(MUSIC).map(k => [k, { label: MUSIC[k as MusicProvider].label, missing: musicMissing(k as MusicProvider) }])),
     pagespeed: { keyed: !!envValue('PAGESPEED_API_KEY') },
+    mcp,
   });
 }

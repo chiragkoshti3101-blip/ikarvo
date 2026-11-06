@@ -1,9 +1,14 @@
 export class ApiError extends Error { constructor(message: string, public setup?: string[], public status = 0) { super(message); } }
 
-export async function api<T>(url: string, body?: unknown): Promise<T> {
-  const r = await fetch(url, body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export async function api<T>(url: string, body?: unknown, method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = 'POST'): Promise<T> {
+  const hasBody = body !== undefined;
+  const r = await fetch(url, {
+    method: hasBody ? method : 'GET',
+    cache: 'no-store',
+    ...(hasBody ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+  });
   const d = await r.json().catch(() => ({}));
-  if (body !== undefined && typeof window !== 'undefined') window.dispatchEvent(new Event('ikarvo:credits'));
+  if (hasBody && typeof window !== 'undefined') window.dispatchEvent(new Event('ikarvo:credits'));
   if (!r.ok) throw new ApiError(d.error || `Request failed (${r.status}).`, d.setup, r.status);
   return d as T;
 }

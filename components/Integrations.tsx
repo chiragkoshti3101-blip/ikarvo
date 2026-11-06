@@ -4,6 +4,7 @@ import Icon from './Icon';
 import { useWs, ErrorNote } from './ws';
 import { api } from '@/lib/client/api';
 import MetaConnect from './meta/MetaConnect';
+import McpIntegrations from './McpIntegrations';
 
 type F = { ok: boolean; label: string; missing: string[]; note?: string };
 type M = { label: string; missing: string[] };
@@ -74,8 +75,9 @@ export default function Integrations() {
       missing: m(a), connected: k === 'youtube' && !m(a).length ? c.google.youtube : null, warn: k === 'tiktok' ? s.warn.tiktok : undefined }))} />
     <Section title="Social publishing" sub="Posts go out only when you publish or approve them for the scheduler" rows={Object.entries(s.publishers.social).map(([k, p]) => ({ name: p.label, what: k === 'x' ? 'POST /2/tweets (OAuth 1.0a keys or OAuth 2.0 token).' : k === 'linkedin' ? 'Posts API (LinkedIn-Version 202610).' : k === 'tiktok' ? 'Direct post from a verified URL (unaudited apps: SELF_ONLY).' : k === 'instagram' ? 'Content publishing (image container → publish).' : k === 'threads' ? 'Threads API container → publish.' : k === 'bluesky' ? 'AT Protocol app password.' : 'Graph API page feed.', missing: p.missing, warn: s.warn[k] ?? (k === 'linkedin' ? s.warn.linkedinVersion : undefined) }))} />
     <Section title="Article publishing (CMS)" sub="Always created as drafts" rows={Object.entries(s.publishers.cms).map(([k, p]) => ({ name: p.label, what: 'Draft created through the official API.', missing: p.missing, warn: s.warn[k] }))} />
+    <McpIntegrations />
     <Section title="Notifications" rows={Object.entries(s.notify).map(([k, n]) => ({ name: n.label, what: k === 'telegram' ? 'Bot API sendMessage to your chat: daily digest + test.' : 'Cloud API text message (24h customer-service window applies; use a template outside it).', missing: n.missing,
       action: !n.missing.length ? <button className="btn ghost sm" disabled={busy === k} onClick={() => test(k)}>Send test</button> : null }))} />
-    <p className="small muted"><Icon name="lock" size={12} /> Tokens are sealed with AES-256-GCM in httpOnly cookies or kept in server env. Callback URLs: <code>/api/github/callback</code>, <code>/api/vercel/callback</code>, <code>/api/google/callback</code>, <code>/api/meta/callback</code>. The Meta Ads token is stored per workspace in Supabase (<code>meta_connections</code>), sealed with SESSION_SECRET.</p>
+    <p className="small muted"><Icon name="lock" size={12} /> Tokens are sealed with AES-256-GCM in httpOnly cookies or kept in server env. OAuth callbacks: <code>/api/github/callback</code>, <code>/api/vercel/callback</code>, <code>/api/google/callback</code>, <code>/api/meta/callback</code>. Meta Ads uses <code>meta_connections</code>; MCP uses <code>mcp_connections</code> + <code>integration_activity</code> (Supabase) or sealed preview cookies — run migration <code>20261106120000_mcp_integrations.sql</code>.</p>
   </div>;
 }

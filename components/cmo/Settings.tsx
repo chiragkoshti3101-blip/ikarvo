@@ -11,7 +11,7 @@ import Integrations from '../Integrations';
 
 const TABS = [
   ['Workspace', [['websites', 'Websites', 'globe'], ['team', 'Team', 'users'], ['credits', 'Usage & credits', 'bolt']]],
-  ['AI CMO', [['agents', 'Agents', 'spark'], ['personalization', 'Personalization', 'user'], ['skills', 'Skills & MCP', 'layers']]],
+  ['AI CMO', [['agents', 'Agents', 'spark'], ['personalization', 'Personalization', 'user'], ['skills', 'Skills', 'layers']]],
   ['Connections', [['integrations', 'Integrations & alerts', 'plug']]],
   ['Account', [['account', 'Profile & security', 'settings'], ['devices', 'Sessions', 'monitor']]],
 ] as const;
@@ -22,7 +22,7 @@ const META: Record<Tab, [string, string]> = {
   credits: ['Usage & credits', 'Your monthly allowance, what each action costs, and recent spend.'],
   agents: ['Agents', 'Turn agents on or off and tune how each one writes. Changes apply on the next run.'],
   personalization: ['Personalization', 'How the CMO addresses you, the language it writes in, and what it remembers.'],
-  skills: ['Skills & MCP', 'Extend the CMO with Markdown playbooks and remote MCP servers.'],
+  skills: ['Skills', 'Markdown playbooks for the AI CMO. MCP servers live under Integrations.'],
   integrations: ['Integrations & alerts', 'Connected accounts, provider keys and daily brief delivery.'],
   account: ['Profile & security', 'Sign-in email, password and account deletion.'],
   devices: ['Sessions', 'Where you are signed in.'],
@@ -140,19 +140,14 @@ function Notifications() {
     {ok && <p className="small ok-text">{ok}</p>}<ErrorNote error={error} onClose={() => setError(null)} /></section>;
 }
 function Skills() {
-  const { store, toast } = useWs(); const [skills, setSkills] = useState<Doc<{ name: string; description: string; body: string; url: string }>[]>([]); const [mcp, setMcp] = useState<Doc<{ url: string; server: unknown; tools: { name: string; description: string }[] }>[]>([]);
-  const [url, setUrl] = useState(''); const [murl, setMurl] = useState(''); const [token, setToken] = useState(''); const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { store.list<{ name: string; description: string; body: string; url: string }>('skills').then(setSkills).catch(() => {}); store.list<{ url: string; server: unknown; tools: { name: string; description: string }[] }>('mcp').then(setMcp).catch(() => {}); }, [store]);
+  const { store, toast } = useWs(); const [skills, setSkills] = useState<Doc<{ name: string; description: string; body: string; url: string }>[]>([]);
+  const [url, setUrl] = useState(''); const [busy, setBusy] = useState(''); const [error, setError] = useState<unknown>(null); const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => { store.list<{ name: string; description: string; body: string; url: string }>('skills').then(setSkills).catch(() => {}); }, [store]);
   async function add() { setBusy('s'); setError(null); try { const r = await api<{ name: string; description: string; body: string; url: string }>('/api/skills', { url }); const d = await store.save('skills', { title: r.name, data: r }); setSkills(s => [d, ...s]); setUrl(''); toast(`Installed ${r.name}`); } catch (e) { setError(e); } finally { setBusy(''); } }
-  async function connect() { setBusy('m'); setError(null); try { const r = await api<{ server: { name?: string } | null; tools: { name: string; description: string }[] }>('/api/mcp', { url: murl, token }); const d = await store.save('mcp', { title: r.server?.name ?? murl, data: { url: murl, server: r.server, tools: r.tools } }); setMcp(m => [d, ...m]); setMurl(''); setToken(''); toast(`Connected: ${r.tools.length} tools`); } catch (e) { setError(e); } finally { setBusy(''); } }
   return <div className="stack"><section className="s-card"><h3>Skills</h3><p className="small muted">A skill is a Markdown playbook (SKILL.md style) from any public URL, e.g. a GitHub file. Installed skills are added to your AI CMO&apos;s context.</p>
     <div className="row"><input className="input" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://github.com/owner/repo/blob/main/skills/launch/SKILL.md" /><button className="btn sm" disabled={!url || busy === 's'} onClick={add}>{busy === 's' ? 'Fetching…' : 'Add skill'}</button></div>
     {skills.length ? <div className="table">{skills.map(s => <div key={s.id}><div className="tr vis" onClick={() => setOpen(open === s.id ? null : s.id)}><span><b>{s.data.name}</b><br /><span className="small muted">{s.data.description || s.data.url}</span></span><span className="small muted">{s.data.body.length} chars</span><button className="btn ghost sm" onClick={async e => { e.stopPropagation(); await store.remove('skills', s.id); setSkills(x => x.filter(y => y.id !== s.id)); }}>Remove</button></div>{open === s.id && <pre className="code small excerpt">{s.data.body.slice(0, 3000)}</pre>}</div>)}</div> : <p className="small muted">None installed yet.</p>}</section>
-    <section className="s-card"><h3>MCP servers</h3><p className="small muted">Connect a remote MCP server (Streamable HTTP). We run initialize + tools/list and save the tool list. The token is used for the test only and never stored.</p>
-      <div className="two"><input className="input" value={murl} onChange={e => setMurl(e.target.value)} placeholder="https://mcp.example.com/mcp" /><input className="input" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="Bearer token (optional)" /></div>
-      <button className="btn sm" disabled={!murl || busy === 'm'} onClick={connect}>{busy === 'm' ? 'Connecting…' : 'Connect & list tools'}</button>
-      {mcp.map(m => <div key={m.id} className="quote small"><div className="row between"><b>{m.title}</b><button className="btn ghost sm" onClick={async () => { await store.remove('mcp', m.id); setMcp(x => x.filter(y => y.id !== m.id)); }}>Remove</button></div><p className="muted">{m.data.url} · {m.data.tools.length} tools</p><div className="chips">{m.data.tools.slice(0, 20).map(t => <span key={t.name} className="chip" title={t.description}>{t.name}</span>)}</div></div>)}
-      <p className="small muted">Tool calls from agents are not wired yet: tools are listed for reference and shown to the CMO as available context.</p></section>
+    <section className="s-card"><h3>MCP servers</h3><p className="small muted">Remote MCP connections (connect, permissions, tool execution, audit log) are on the <a href="/app?view=integrations">Integrations</a> page under MCP servers.</p></section>
     <ErrorNote error={error} onClose={() => setError(null)} /></div>;
 }
 type Member = { email: string; role: string; status: string; created_at: string };

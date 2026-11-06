@@ -1,23 +1,66 @@
 import { NextResponse } from 'next/server';
 import { requireActor } from '@/lib/auth';
-import { normalizeUrl, safeFetch } from '@/lib/site';
 import { fail, readJson, str } from '@/lib/http';
+import { discoverMcpServer } from '@/lib/mcp/client';
+import { deleteMcpConnection, listMcpConnections, mcpStorageReady, upsertMcpConnection } from '@/lib/mcp/connections';
+import { logIntegrationActivity } from '@/lib/mcp/audit';
+import { normalizeHttpsUrl } from '@/lib/mcp/ssrf';
+
 export const runtime = 'nodejs';
-/** Connect test for a remote MCP server (Streamable HTTP): initialize, then tools/list. Tokens are used for this request only, never stored server-side. */
+
+/** List persisted MCP connections for this user/workspace. */
+export async function GET() {
+  const actor = await requireActor(); if (actor instanceof NextResponse) return actor;
+  const store = mcpStorageReady(actor);
+  if (!store.ok) return fail(503, 'MCP connections need encrypted storage. Set SESSION_SECRET or configure Supabase.', store.missing);
+  try {
+    const connections = await listMcpConnections(actor);
+    return NextResponse.json({ connections, storage: actor.supabase ? 'supabase' : 'preview' });
+  } catch (e) {
+    return fail(503, e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** Connect: discover tools on a remote MCP server and persist the connection (optional bearer token, sealed). */
 export async function POST(req: Request) {
   const actor = await requireActor(); if (actor instanceof NextResponse) return actor;
-  const b = await readJson(req); let u: URL; try { u = normalizeUrl(str(b?.url, 500)); } catch { return fail(400, 'Enter the MCP server URL.'); }
-  const token = str(b?.token, 2000);
-  const h: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-  const parse = async (r: Response) => { const t = await r.text(); if ((r.headers.get('content-type') ?? '').includes('event-stream')) { const line = t.split('\n').filter(l => l.startsWith('data:')).pop(); return line ? JSON.parse(line.slice(5)) : {}; } return t ? JSON.parse(t) : {}; };
+  const store = mcpStorageReady(actor);
+  if (!store.ok) return fail(503, 'MCP connections need encrypted storage. Set SESSION_SECRET or configure Supabase.', store.missing);
+  const b = await readJson(req);
+  let url: URL;
+  try { url = normalizeHttpsUrl(str(b?.url, 500)); } catch (e) { return fail(400, e instanceof Error ? e.message : 'Enter a valid https MCP server URL.'); }
+  const token = str(b?.token, 2000) || undefined;
+  const title = str(b?.title, 120);
   try {
-    const init = await safeFetch(u, 15000, 0, { method: 'POST', headers: h, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'ikarvo', version: '1.0' } } }) });
-    if (init.res.status === 401) return fail(401, 'The MCP server requires authorization. Add a bearer token.');
-    if (!init.res.ok) return fail(502, `initialize failed (${init.res.status}).`);
-    const info = await parse(init.res); const sid = init.res.headers.get('mcp-session-id'); if (sid) h['Mcp-Session-Id'] = sid;
-    await safeFetch(u, 8000, 0, { method: 'POST', headers: h, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) }).catch(() => null);
-    const tl = await safeFetch(u, 15000, 0, { method: 'POST', headers: h, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) });
-    const tools = tl.res.ok ? await parse(tl.res) : {};
-    return NextResponse.json({ server: info.result?.serverInfo ?? null, protocol: info.result?.protocolVersion ?? null, tools: (tools.result?.tools ?? []).map((t: { name: string; description?: string }) => ({ name: t.name, description: (t.description ?? '').slice(0, 200) })) });
-  } catch (e) { return fail(502, e instanceof Error ? e.message : String(e)); }
+    const discovered = await discoverMcpServer(url.href, token);
+    const conn = await upsertMcpConnection(actor, {
+      title: title || discovered.serverInfo?.name || url.hostname,
+      url: url.href,
+      serverInfo: { ...(discovered.serverInfo ?? {}), protocolVersion: discovered.protocolVersion },
+      tools: discovered.tools,
+      bearerToken: token,
+      status: 'connected',
+      lastError: null,
+    });
+    await logIntegrationActivity(actor, { source: 'mcp', connectionId: conn.id, action: 'connect', toolName: null, status: 'ok', detail: { url: url.href, toolCount: conn.tools.length } });
+    return NextResponse.json({ connection: conn });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await logIntegrationActivity(actor, { source: 'mcp', connectionId: null, action: 'connect', toolName: null, status: 'error', detail: { url: url.href, error: msg } });
+    return fail(502, msg);
+  }
+}
+
+/** Disconnect by id (?id=). */
+export async function DELETE(req: Request) {
+  const actor = await requireActor(); if (actor instanceof NextResponse) return actor;
+  const id = new URL(req.url).searchParams.get('id');
+  if (!id) return fail(400, 'Missing connection id.');
+  try {
+    await deleteMcpConnection(actor, id);
+    await logIntegrationActivity(actor, { source: 'mcp', connectionId: id, action: 'disconnect', toolName: null, status: 'ok', detail: {} });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return fail(404, e instanceof Error ? e.message : String(e));
+  }
 }
