@@ -83,8 +83,22 @@ export async function POST(req: Request) {
     const steps: string[] = []; let plan = '';
     if (cfg.plan) { plan = (await chat({ system: PLANNER, temperature: 0.2, maxTokens: 1500, model: tm, user: `PROJECT TYPE: ${kind}\n\nREQUEST:\n${prompt}${prevFiles ? `\n\nCURRENT FILES: ${prevFiles.map(f => f.path).join(', ')}` : ''}` })).content; steps.push('plan'); }
     const brief = prevFiles ? `Revise this project. Keep everything that works unless asked otherwise. Return the complete file set.\n\nREQUEST:\n${prompt}\n\nCURRENT FILES:\n${JSON.stringify(prevFiles).slice(0, 60000)}` : `Build:\n${prompt}`;
-    const built = await chat({ system: SYSTEMS[kind] + extra, temperature, maxTokens: cfg.maxTokens, json: true, model: tm, user: plan ? `${brief}\n\nPLAN:\n${plan}` : brief });
-    let files = cleanFiles(parseJson<{ files: AppFile[] }>(built.content).files); const model = built.model; steps.push('build');
+    // A long file set can stop at the output limit or come back malformed. One corrective retry recovers most of those
+    // instead of charging the user for a failed build.
+    const system = SYSTEMS[kind] + extra;
+    const user = plan ? `${brief}\n\nPLAN:\n${plan}` : brief;
+    let files: AppFile[]; let model: string;
+    const first = await chat({ system, temperature, maxTokens: cfg.maxTokens, json: true, model: tm, user });
+    model = first.model;
+    try { files = cleanFiles(parseJson<{ files: AppFile[] }>(first.content).files); }
+    catch (e) {
+      if (!(e instanceof AiError)) throw e;
+      steps.push('retry');
+      const again = await chat({ system: `${system}\n\nReturn ONLY the JSON object, compact, with no commentary. Every file must be complete and the object must end with a closing brace.`, temperature: 0.2, maxTokens: cfg.maxTokens, json: true, model: tm,
+        user: `${user}\n\nThe previous reply could not be used (${e.message}). Return the full file set again, using fewer files if that helps, but nothing truncated.` });
+      files = cleanFiles(parseJson<{ files: AppFile[] }>(again.content).files); model = again.model;
+    }
+    steps.push('build');
     if (cfg.review) try {
       const rv = await chat({ system: SYSTEMS[kind] + extra + REVIEW, temperature: 0.2, maxTokens: cfg.maxTokens, json: true, model: tm, user: `REQUEST:\n${prompt}\n\nPLAN:\n${plan}\n\nFILES:\n${JSON.stringify(files).slice(0, 90000)}` });
       files = cleanFiles(parseJson<{ files: AppFile[] }>(rv.content).files); steps.push('review');

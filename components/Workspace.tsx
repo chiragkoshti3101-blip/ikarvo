@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Icon from './Icon';
 import { WsProvider, ErrorNote } from './ws';
-import { api, type Status } from '@/lib/client/api';
+import { api, ApiError, type Status } from '@/lib/client/api';
 import { cloudStore, localStore, setActiveWorkspace, WS_KEY } from '@/lib/client/store';
 import { createClient } from '@/lib/supabase/client';
 import BuildStudio from './BuildStudio';
@@ -109,8 +109,17 @@ export default function Workspace() {
       if (s.preview) { setShared([]); setEmail('preview@local'); return; }
       if (!s.supabase.ok) return;
       const sb = createClient(); const { data } = await sb.auth.getUser();
-      if (data.user) { const t = await api<{ workspaces: Shared[] }>('/api/team').catch(() => ({ workspaces: [] as Shared[] })); const want = localStorage.getItem(WS_KEY);
-        const ok = t.workspaces.find(w => w.owner === want) ? want : null; if (!ok) localStorage.removeItem(WS_KEY); setActiveWorkspace(ok); setActive(ok); setShared(t.workspaces); } else setShared([]);
+      if (data.user) {
+        let workspaces: Shared[] = [];
+        try { workspaces = (await api<{ workspaces: Shared[] }>('/api/team')).workspaces; }
+        catch (e) {
+          // A stored token can outlive its account (deleted or revoked). Drop it rather than render a shell that cannot load data.
+          if (e instanceof ApiError && e.status === 401) { await sb.auth.signOut().catch(() => {}); localStorage.removeItem(WS_KEY); setActiveWorkspace(null); setActive(null); setShared([]); setEmail(''); return; }
+        }
+        const want = localStorage.getItem(WS_KEY);
+        const ok = workspaces.find(w => w.owner === want) ? want : null; if (!ok) localStorage.removeItem(WS_KEY);
+        setActiveWorkspace(ok); setActive(ok); setShared(workspaces);
+      } else setShared([]);
       setEmail(data.user?.email ?? '');
       sb.auth.onAuthStateChange((_e: string, sess: { user?: { email?: string } } | null) => setEmail(sess?.user?.email ?? ''));
     }).catch(setErr);
