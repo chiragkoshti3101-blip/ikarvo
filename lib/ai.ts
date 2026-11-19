@@ -45,6 +45,18 @@ export async function chat(opts: { system: string; user: string; temperature?: n
   return { content: content.trim(), model, finishReason };
 }
 
+/** chat() + parseJson(): one corrective retry when the model returns truncated or malformed JSON. */
+export async function chatJson<T>(opts: { system: string; user: string; temperature?: number; maxTokens?: number; model?: string }): Promise<{ data: T; model: string }> {
+  const first = await chat({ ...opts, json: true });
+  try { return { data: parseJson<T>(first.content), model: first.model }; }
+  catch (e) {
+    if (!(e instanceof AiError)) throw e;
+    const again = await chat({ ...opts, json: true, temperature: Math.min(opts.temperature ?? 0.5, 0.3),
+      user: `${opts.user}\n\nYour previous reply could not be used (${e.message}). Return the complete JSON object again: compact, valid, nothing truncated, no commentary.` });
+    return { data: parseJson<T>(again.content), model: again.model };
+  }
+}
+
 export function parseJson<T>(text: string): T {
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const start = cleaned.indexOf('{'); const end = cleaned.lastIndexOf('}');

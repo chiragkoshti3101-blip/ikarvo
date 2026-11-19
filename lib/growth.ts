@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { requireActor, consumeQuota } from '@/lib/auth';
-import { chat, parseJson, AiError } from '@/lib/ai';
+import { chatJson, AiError } from '@/lib/ai';
 import { fail, readJson } from '@/lib/http';
 import { refund } from '@/lib/credits';
 
@@ -15,7 +15,7 @@ export function aiJsonRoute(build: (b: Record<string, unknown>) => { system: str
     const spec = build(b); if (typeof spec === 'string') return fail(400, spec);
     const action = new URL(req.url).pathname.split('/').filter(Boolean).pop() ?? 'ai';
     const limited = await consumeQuota(actor, 30, action); if (limited) return limited;
-    try { const { content, model } = await chat({ ...spec, json: true, temperature: 0.6, maxTokens: spec.maxTokens ?? 4000 }); return NextResponse.json({ result: parseJson(content), model }); }
+    try { const { data, model } = await chatJson({ ...spec, temperature: 0.6, maxTokens: spec.maxTokens ?? 4000 }); return NextResponse.json({ result: data, model }); }
     catch (e) { await refund(actor, action); const err = e instanceof AiError ? e : new AiError(String(e)); return fail(err.status, err.message, err.status === 503 ? ['AI_API_KEY'] : undefined); }
   };
 }
