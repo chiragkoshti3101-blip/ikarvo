@@ -40,7 +40,7 @@ export default function Strategy() {
 
   return <div className="growth">
     <section className="panel">
-      <div className="row between"><h2 className="h2">Website</h2>{a && <span className="small muted">Last audit {new Date(a.at).toLocaleString()}</span>}</div>
+      <div className="row between"><h2 className="h2">Website</h2>{a && <span className="small muted">Last audit {new Date(a.at).toLocaleString('en-US')}</span>}</div>
       <div className="url-row"><input className="input" placeholder="yourproduct.com" value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && url && audit()} />
         <button className="btn primary" disabled={!url || !!busy} onClick={audit}>{busy === 'audit' ? <><span className="spin" />Reading site…</> : a ? 'Re-audit' : 'Analyze site'}</button></div>
       <label className="label">Notes for the strategist (optional)<textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Who it's for, pricing, what makes it different, what you've tried…" /></label>

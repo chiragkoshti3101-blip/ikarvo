@@ -12,7 +12,7 @@ export default function AdPlanner() {
   }), [mix, budget, trialToPaid]);
   const t = rows.reduce((a, r) => ({ spend: a.spend + r.spend, clicks: a.clicks + r.clicks, signups: a.signups + r.signups, paid: a.paid + r.paid }), { spend: 0, clicks: 0, signups: 0, paid: 0 });
   const ltv = price * months * margin / 100; const cac = t.paid ? t.spend / t.paid : 0; const shares = Object.values(mix).filter(c => c.on).reduce((a, c) => a + c.share, 0);
-  const n = (x: number, d = 0) => x.toLocaleString(undefined, { maximumFractionDigits: d }); const set = (k: string, f: string, v: number | boolean) => setMix(m => ({ ...m, [k]: { ...m[k], [f]: v } }));
+  const n = (x: number, d = 0) => x.toLocaleString('en-US', { maximumFractionDigits: d }); const set = (k: string, f: string, v: number | boolean) => setMix(m => ({ ...m, [k]: { ...m[k], [f]: v } }));
   return <div className="growth">
     <section className="panel"><h2 className="h2">Ad budget planner</h2>
       <p className="small muted">Plan spend before you launch ads. Defaults are rough placeholders; replace them with your own numbers or last campaign&apos;s results.</p>

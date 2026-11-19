@@ -23,7 +23,7 @@ export default function VoiceLab() {
     <section className="panel">
       <h2 className="h2">Brand-voice check</h2>
       <p className="small muted">Readability, sentence length, clichés and your own banned phrases are checked locally (no key). With <code>AI_API_KEY</code> you also get a voice score with quoted fixes and a rewrite.</p>
-      <label className="label">Voice traits<input className="input" value={traits} onChange={e => setTraits(e.target.value)} placeholder="Plain-spoken, specific, dry humour" /></label>
+      <label className="label">Voice traits<input className="input" value={traits} onChange={e => setTraits(e.target.value)} placeholder="Plain-spoken, specific, dry humor" /></label>
       <label className="label">Never say (one per line)<textarea rows={3} value={dont} onChange={e => setDont(e.target.value)} /></label>
       <label className="label">Copy to check<textarea rows={7} value={text} onChange={e => setText(e.target.value)} placeholder="Paste a post, email, landing section…" /></label>
       <button className="btn primary wide" disabled={!!busy || text.trim().length < 20} onClick={check}>{busy === 'voice' ? <><span className="spin" />Checking…</> : 'Check voice'}</button>

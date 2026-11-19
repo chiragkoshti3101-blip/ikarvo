@@ -8,7 +8,7 @@ export type Report = { range: { start: string; end: string }; search?: { totals:
   analytics?: { metrics: string[]; current: number[]; previous: number[]; daily: [string, number][]; pages: [string, number, number][]; channels: [string, number][] }; analyticsError?: string };
 type Conn = { configured: boolean; connected: boolean; sites?: string[]; properties?: { id: string; name: string }[]; sitesError?: string | null; propertiesError?: string | null };
 const delta = (a?: number, b?: number) => a == null || !b ? null : Math.round(((a - b) / b) * 100);
-function Stat({ label, v, prev, fmt = (x: number) => x.toLocaleString(), invert }: { label: string; v?: number; prev?: number; fmt?: (x: number) => string; invert?: boolean }) {
+function Stat({ label, v, prev, fmt = (x: number) => x.toLocaleString('en-US'), invert }: { label: string; v?: number; prev?: number; fmt?: (x: number) => string; invert?: boolean }) {
   const d = delta(v, prev); const good = d == null ? null : invert ? d < 0 : d > 0;
   return <div className="stat"><span className="small muted">{label}</span><b>{v == null ? '–' : fmt(v)}</b>{d != null && <span className={`small ${good ? 'ok-text' : 'err-text'}`}>{d > 0 ? '+' : ''}{d}% vs prior 28d</span>}</div>;
 }

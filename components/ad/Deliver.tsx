@@ -32,7 +32,7 @@ export default function Deliver({ ready, rev }: { ready: Readiness | null; rev: 
     if (!it) return; const at = new Date(when); await store.save('posts', { title: `${chan} · ${it.project}`, data: { channel: chan, when, at: at.toISOString(), text: [title, desc].filter(Boolean).join('\n\n') || it.project, hashtags: [], approved: false, media: it.name } });
     const f = (d: Date) => d.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z'; const end = new Date(at.getTime() + 15 * 6e4);
     download(`${it.name}.ics`, ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Ikarvo//Ad Studio//EN', 'BEGIN:VEVENT', `UID:${it.id}@ikarvo`, `DTSTAMP:${f(new Date())}`, `DTSTART:${f(at)}`, `DTEND:${f(end)}`, `SUMMARY:Post ${it.name} on ${chan}`, `DESCRIPTION:${(title + ' ' + desc).replace(/\n/g, '\\n').slice(0, 900)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n'), 'text/calendar');
-    toast(`Added to the content calendar for ${at.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`);
+    toast(`Added to the content calendar for ${at.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`);
   }
 
   if (!items.length) return <div className="empty"><Icon name="film" /><h3>No renders yet</h3><p className="muted">Export a video in the Launch video or UGC tab, or save a static ad. Renders are kept in this browser (IndexedDB) until you publish or delete them.</p></div>;

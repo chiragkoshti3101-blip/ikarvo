@@ -27,8 +27,8 @@ const days=[...Array(7)].map((_,i)=>{const d=new Date();d.setDate(d.getDate()-6+
 const key=d=>d.toISOString().slice(0,10);
 let habits=JSON.parse(localStorage.getItem('fn')||'null')||[{name:'Walk 30 minutes',done:[]},{name:'No phone after 10pm',done:[]}];
 const save=()=>localStorage.setItem('fn',JSON.stringify(habits));
-document.getElementById('today').textContent=new Date().toLocaleDateString([], {weekday:'long',month:'long',day:'numeric'});
-document.getElementById('head').innerHTML='<th>Habit</th>'+days.map(d=>'<th>'+d.toLocaleDateString([], {weekday:'short'})+'</th>').join('')+'<th>Streak</th><th></th>';
+document.getElementById('today').textContent=new Date().toLocaleDateString('en-US', {weekday:'long',month:'long',day:'numeric'});
+document.getElementById('head').innerHTML='<th>Habit</th>'+days.map(d=>'<th>'+d.toLocaleDateString('en-US', {weekday:'short'})+'</th>').join('')+'<th>Streak</th><th></th>';
 function streak(h){let s=0;for(let i=6;i>=0;i--){if(h.done.includes(key(days[i])))s++;else if(i<6)break;}return s}
 function render(){document.getElementById('body').innerHTML=habits.map((h,i)=>'<tr><td>'+h.name.replace(/</g,'&lt;')+'</td>'+days.map(d=>'<td><button aria-label="toggle" class="dot '+(h.done.includes(key(d))?'on':'')+'" data-i="'+i+'" data-d="'+key(d)+'"></button></td>').join('')+'<td class="streak">'+streak(h)+'</td><td><button class="del" data-del="'+i+'">Remove</button></td></tr>').join('');
 const total=habits.reduce((a,h)=>a+h.done.filter(x=>days.some(d=>key(d)===x)).length,0);document.getElementById('sum').textContent=total+' check-ins this week across '+habits.length+' habits.';}

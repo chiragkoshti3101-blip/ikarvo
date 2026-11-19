@@ -150,7 +150,7 @@ function scene(c: Ctx) {
   }
   if (s.template === 'stat') {
     const raw = s.stat || '10x'; const m = raw.match(/^([^\d]*)([\d.,]+)(.*)$/); const k = easeInOut(t / 1.4);
-    const shown = m ? `${m[1]}${(parseFloat(m[2].replace(/,/g, '')) * k).toLocaleString(undefined, { maximumFractionDigits: m[2].includes('.') ? 1 : 0 })}${m[3]}` : raw;
+    const shown = m ? `${m[1]}${(parseFloat(m[2].replace(/,/g, '')) * k).toLocaleString('en-US', { maximumFractionDigits: m[2].includes('.') ? 1 : 0 })}${m[3]}` : raw;
     const size = u * (portrait ? 26 : 22); ctx.font = `700 ${size}px ${disp}`; let fs = size; while (ctx.measureText(raw).width > maxW && fs > u * 8) { fs *= 0.92; ctx.font = `700 ${fs}px ${disp}`; }
     ctx.fillStyle = colors.acc; ctx.textBaseline = 'alphabetic'; ctx.fillText(shown, pad, H * 0.5);
     text(c, s.headline, pad, H * 0.53, maxW, u * 5.4, { font: body, weight: 600, color: colors.fg, anim: s.anim, delay: 0.5, lh: 1.15 });
