@@ -23,13 +23,14 @@ export async function chat(opts: { system: string; user: string; temperature?: n
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       if (/timeout|abort/i.test(m)) throw new AiError('The AI provider timed out. Try again or use a faster model.');
-      if (attempt < 2) { await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); continue; }
+      if (attempt < 2) { await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
       throw new AiError(`Could not reach the AI provider: ${m}`);
     }
     if (res.ok) break;
     lastStatus = res.status; lastMessage = (await res.json().catch(() => ({})))?.error?.message ?? '';
     if (!RETRYABLE.has(res.status) || attempt === 2) break;
-    await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+    // Rate limits are usually per minute, so they need a longer wait than a one-off 5xx.
+    await new Promise(r => setTimeout(r, (res.status === 429 ? 8000 : 1200) * (attempt + 1)));
   }
   if (!res || !res.ok) {
     const status = res?.status ?? lastStatus;
