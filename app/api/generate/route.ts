@@ -12,9 +12,9 @@ export const maxDuration = 300;
 
 /** Server-side tier config: model (env-overridable), output budget and steps. */
 const TIER_CFG: Record<Tier, { model: () => string; maxTokens: number; plan: boolean; review: boolean }> = {
-  fast: { model: () => envValue('AI_MODEL_FAST') || 'google/gemini-2.5-flash', maxTokens: 8000, plan: false, review: false },
-  pro: { model: () => envValue('AI_MODEL_PRO') || envValue('AI_MODEL') || 'anthropic/claude-sonnet-4.5', maxTokens: 16000, plan: true, review: false },
-  max: { model: () => envValue('AI_MODEL_MAX') || 'anthropic/claude-opus-4.1', maxTokens: 32000, plan: true, review: true },
+  fast: { model: () => envValue('AI_MODEL_FAST') || 'google/gemini-2.5-flash', maxTokens: 12000, plan: false, review: false },
+  pro: { model: () => envValue('AI_MODEL_PRO') || envValue('AI_MODEL') || 'anthropic/claude-sonnet-4.5', maxTokens: 24000, plan: true, review: false },
+  max: { model: () => envValue('AI_MODEL_MAX') || 'anthropic/claude-opus-4.1', maxTokens: 40000, plan: true, review: true },
 };
 const PLANNER = `You are a principal product engineer. Write a concise build plan for the request: the file list with one-line purposes, screens/pages, data model, key interactions and visual direction. Plain text, under 300 words. No code.`;
 const REVIEW = `\n\nYou are now REVIEWING a previous attempt. Check it against the request and plan: fix bugs, broken imports/links, missing required files, unhandled states, accessibility and visual polish. Return the complete corrected file set in the same JSON format.`;
@@ -88,8 +88,14 @@ export async function POST(req: Request) {
     const system = SYSTEMS[kind] + extra;
     const user = plan ? `${brief}\n\nPLAN:\n${plan}` : brief;
     let files: AppFile[]; let model: string;
-    const first = await chat({ system, temperature, maxTokens: cfg.maxTokens, json: true, model: tm, user });
+    let first = await chat({ system, temperature, maxTokens: cfg.maxTokens, json: true, model: tm, user });
     model = first.model;
+    // A reply stopped at the output limit can never parse. Ask again with a bigger budget and a terser brief.
+    if (first.finishReason === 'length') {
+      steps.push('extend');
+      first = await chat({ system: `${system}\n\nReturn ONLY the JSON object. Keep the code lean: no comments, compact CSS, minimal markup, but every file complete.`, temperature: 0.2, maxTokens: Math.min(cfg.maxTokens * 2, 40000), json: true, model: tm, user });
+      model = first.model;
+    }
     try { files = cleanFiles(parseJson<{ files: AppFile[] }>(first.content).files); }
     catch (e) {
       if (!(e instanceof AiError)) throw e;
