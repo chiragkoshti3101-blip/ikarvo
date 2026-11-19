@@ -93,3 +93,16 @@ Then either push to the connected branch (Vercel builds automatically) or run
 - Plans and credit amounts are set with `PLAN_*` / `CREDITS_*` env vars; the charged
   amount always comes from the Stripe price.
 - Money in Meta Ads is shown in the connected ad account's currency (USD for US accounts).
+
+## Provisioned resources (created in this workspace)
+
+- **Supabase project** `ikarvo` — region **East US (North Virginia) / us-east-1**, project ref `kshnymikdhfunzbbncuo`.
+  All 9 migrations in `supabase/migrations` were applied (34 tables incl. `profiles`, `projects`,
+  `campaigns`, `posts`, `brands`, `meta_connections`, `credit_events`).
+- **Vercel project** `ikarvo` — production domain `https://ikarvo.vercel.app`, Git repo
+  `chiragkoshti3101-blip/ikarvo` connected on the `main` branch.
+- **Environment variables set in Vercel:** `APP_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
+  `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (plus existing
+  `SESSION_SECRET`, `AI_*`, `CRON_SECRET`).
+- **Supabase Auth** callbacks to configure after first deploy: Site URL `https://ikarvo.vercel.app`,
+  redirect `https://ikarvo.vercel.app/auth/callback`.
