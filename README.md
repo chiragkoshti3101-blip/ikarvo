@@ -35,7 +35,7 @@ Preview mode skips sign-in and stores data in localStorage. It only works under 
 | Meta Ads (Facebook/Instagram) | `META_APP_ID`, `META_APP_SECRET`, `SESSION_SECRET`; optional `META_LOGIN_CONFIG_ID`, `META_GRAPH_VERSION`, single-owner `META_ADS_TOKEN` + `META_AD_ACCOUNT_ID` + `FACEBOOK_PAGE_ID` | Business app with Marketing API + Facebook Login for Business. Redirect URI `{APP_URL}/api/meta/callback`. Scopes: `ads_management`, `ads_read`, `business_management` (+ `pages_show_list`, `pages_read_engagement`). Advanced Access to `ads_management` needs App Review. See *Meta Ads (v8)*. |
 | AI image/video | `REPLICATE_API_TOKEN` **or** `FAL_KEY`; model IDs are overridable | Defaults: Replicate `black-forest-labs/flux-schnell` and `minimax/video-01`; fal `fal-ai/flux/schnell` and `fal-ai/kling-video/v1/standard/text-to-video`. |
 
-`/api/status` reports which features are configured. It returns booleans and env var *names* only, never values. **Billing & setup** in the app shows the same checklist.
+`/api/status` reports which features are configured. It returns booleans, env var *names* and the AI model chain, never values. **Billing & setup** in the app shows the same checklist.
 
 
 ## Marketing workspace (Growth)
