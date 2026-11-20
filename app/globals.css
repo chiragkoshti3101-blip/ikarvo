@@ -596,6 +596,10 @@ kbd,.kbd{font:500 11px/1 var(--font-mono),monospace;padding:3px 6px;border:1px s
 .auth-card{padding:36px;border-radius:var(--r-xl);animation:popIn var(--d-slow) var(--ease-out) both}
 .auth-card h1{font-size:40px;letter-spacing:-.01em}
 .auth-sub{margin:0 0 10px;color:var(--mut);font-size:14px}
+.auth-google{width:100%;justify-content:center;gap:9px;margin-top:14px;background:var(--card);border:1px solid var(--line);color:var(--ink);font-weight:500}
+.auth-google:hover{background:var(--paper-2)}
+.auth-sep{display:flex;align-items:center;gap:12px;margin:16px 0 2px;color:var(--mut);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.auth-sep:before,.auth-sep:after{content:"";flex:1;height:1px;background:var(--line)}
 /* misc state polish */
 .spin{animation-duration:.7s}
 .pill,.chip,.st{font-variant-numeric:tabular-nums}

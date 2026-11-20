@@ -77,9 +77,45 @@ function Boot() {
     <div className="boot-main"><span className="sk sk-line" style={{ width: 70 }} /><span className="sk sk-title" /><span className="sk sk-line" style={{ width: '55%' }} /><div className="boot-grid">{Array.from({ length: 6 }, (_, i) => <span key={i} className="sk sk-card" />)}</div></div></div>;
 }
 
+function GoogleMark() {
+  return <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+    <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.5 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.2 17.7 9.5 24 9.5Z" />
+    <path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-2.8-.4-4.1H24v8.1h12.5c-.3 2.1-1.6 5.2-4.7 7.3l7.6 5.9c4.5-4.1 6.7-10.2 6.7-17.2Z" />
+    <path fill="#FBBC05" d="M10.4 28.7a14.6 14.6 0 0 1 0-9.4l-7.8-6.1a24 24 0 0 0 0 21.6l7.8-6.1Z" />
+    <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.9l-7.6-5.9c-2 1.4-4.8 2.5-8.3 2.5-6.3 0-11.7-3.7-13.6-9.9l-7.8 6.1C6.5 42.6 14.6 48 24 48Z" />
+  </svg>;
+}
+
 function AuthForm() {
   const [mode, setMode] = useState<'in' | 'up' | 'reset'>('in'); const [email, setEmail] = useState(''); const [pw, setPw] = useState('');
-  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(''); const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false); const [googleBusy, setGoogleBusy] = useState(false);
+  const [google, setGoogle] = useState(false);
+  const [msg, setMsg] = useState(''); const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    // Provider errors come back on /app?authError=… (see app/auth/callback).
+    const params = new URLSearchParams(location.search); const code = params.get('authError');
+    if (code) {
+      setError(new Error(code === 'access_denied' ? 'Google sign-in was cancelled. Try again, or use your email.' : 'We could not finish signing you in with Google. Try again, or use your email.'));
+      params.delete('authError'); const qs = params.toString();
+      history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}`);
+    }
+    // Only offer Google when the provider is switched on for this Supabase project.
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL; const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    if (!url || !key) return;
+    let live = true;
+    fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
+      .then(r => (r.ok ? r.json() : null))
+      .then((s: { external?: { google?: boolean } } | null) => { if (live) setGoogle(!!s?.external?.google); })
+      .catch(() => { if (live) setGoogle(false); });
+    return () => { live = false; };
+  }, []);
+  async function withGoogle() {
+    setError(null); setMsg(''); setGoogleBusy(true);
+    try {
+      const { error } = await createClient().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: `${location.origin}/auth/callback?next=/app`, queryParams: { prompt: 'select_account' } } });
+      if (error) throw error;
+    } catch (err) { setError(err); setGoogleBusy(false); }
+  }
   async function submit(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError(null); setMsg('');
     const sb = createClient(); const redirect = `${location.origin}/auth/callback?next=/app`;
@@ -91,6 +127,7 @@ function AuthForm() {
   }
   return <div className="auth"><div className="auth-art"><Link href="/" className="wordmark lg">Ikar<em>vo</em></Link><div><p className="display">Build it, ship it, sell it. From one brief.</p><ul><li><b>01</b>Prompt to a working app, live in minutes</li><li><b>02</b>Push to GitHub, deploy to Vercel</li><li><b>03</b>UGC and motion ads, Meta campaigns</li><li><b>04</b>An AI CMO that writes the launch</li></ul></div><span className="small" style={{ color: '#9f988a', position: 'relative', zIndex: 1 }}>© Ikarvo</span></div>
     <form className="auth-card" onSubmit={submit}><h1>{mode === 'up' ? 'Create your account' : mode === 'reset' ? 'Reset password' : 'Welcome back'}</h1><p className="auth-sub">{mode === 'up' ? 'Free to start. No card needed.' : mode === 'reset' ? 'We’ll email you a secure link.' : 'Sign in to your workspace.'}</p>
+      {google && mode !== 'reset' && <><button type="button" className="btn auth-google" onClick={withGoogle} disabled={busy || googleBusy}><GoogleMark />{googleBusy ? 'Opening Google…' : 'Continue with Google'}</button><div className="auth-sep"><span>or</span></div></>}
       <label className="label">Email<input className="input" type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></label>
       {mode !== 'reset' && <label className="label">Password<input className="input" type="password" required minLength={8} autoComplete={mode === 'up' ? 'new-password' : 'current-password'} value={pw} onChange={e => setPw(e.target.value)} /></label>}
       <button className="btn primary wide" disabled={busy}>{busy ? <><span className="spin" aria-hidden />One moment…</> : mode === 'up' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}</button>
