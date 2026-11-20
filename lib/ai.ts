@@ -9,11 +9,21 @@ type ChatOpts = { system: string; user: string; temperature?: number; maxTokens?
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-/** Primary model first, then AI_FALLBACK_MODELS. Quotas are per model, so one exhausted model must not take the product down. */
-function modelChain(explicit?: string) {
-  const primary = explicit || envValue('AI_MODEL') || 'openai/gpt-4o-mini';
+/** The configured chain: AI_MODEL first, then AI_FALLBACK_MODELS. Quotas are per model, so one exhausted model must not take the product down. */
+export function aiModels(base?: string) {
+  const primary = base || envValue('AI_MODEL') || 'openai/gpt-4o-mini';
   const fallbacks = (envValue('AI_FALLBACK_MODELS') || '').split(',').map(m => m.trim()).filter(Boolean);
-  return [primary, ...fallbacks.filter(m => m !== primary)].slice(0, 4);
+  const chain = [primary, ...fallbacks.filter(m => m !== primary)].slice(0, 4);
+  return { primary, fallbacks: chain.slice(1), chain };
+}
+
+// Which model last answered on this server instance. Serverless instances each keep their own, so it can be empty.
+let answered: { model: string; at: string } | null = null;
+export function lastAnsweredModel() { return answered; }
+
+function modelChain(explicit?: string) {
+  const { primary, fallbacks } = aiModels(explicit);
+  return [primary, ...fallbacks];
 }
 
 /** The useful part of a provider error sits in different places; an empty string here used to reach the user as "unknown error". */
@@ -61,6 +71,7 @@ export async function chat(opts: ChatOpts) {
       const content = choice?.message?.content;
       if (typeof content !== 'string' || !content.trim()) throw new AiError('The AI provider returned an empty response.');
       const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
+      answered = { model, at: new Date().toISOString() };
       return { content: content.trim(), model, finishReason };
     }
     tried.push(`${model} (${status})`);
