@@ -26,7 +26,7 @@ Preview mode skips sign-in and stores data in localStorage. It only works under 
 | Feature | Env vars | Provider-side setup |
 |---|---|---|
 | Accounts + cloud data | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Run the migrations (below). Under Auth → URL config, add `{APP_URL}/auth/callback`. |
-| AI (apps, ad concepts, marketing) | `AI_API_KEY`, optionally `AI_BASE_URL` and `AI_MODEL` | Any OpenAI-compatible `/chat/completions` endpoint. OpenRouter is the default. |
+| AI (apps, ad concepts, marketing) | `AI_API_KEY`, optionally `AI_BASE_URL`, `AI_MODEL`, `AI_FALLBACK_MODELS` | Any OpenAI-compatible `/chat/completions` endpoint. OpenRouter is the default. |
 | Integration sessions | `SESSION_SECRET` (`openssl rand -hex 32`) | Encrypts GitHub/Vercel tokens (AES-256-GCM, httpOnly cookie). |
 | GitHub | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub → Settings → Developer settings → OAuth App. Callback: `{APP_URL}/api/github/callback`. Scope requested: `repo`. |
 | Vercel (multi-user) | `VERCEL_CLIENT_ID`, `VERCEL_CLIENT_SECRET`, `VERCEL_INTEGRATION_SLUG` | Create a Vercel Integration. Redirect URL: `{APP_URL}/api/vercel/callback`. |
@@ -113,12 +113,14 @@ lib/client/store.ts          Supabase or localStorage document store
 ```
 
 ## Known limits
-- Generated apps are single HTML files, not multi-file Next.js projects. GitHub push and Vercel deploy ship that file.
-- Social publishing happens on click only, and only for X and LinkedIn (single-account tokens, no per-user OAuth yet). There is no background scheduler: scheduled posts are reminders and .ics events. Instagram and TikTok publishing are not implemented.
-- Not implemented: influencer discovery/outreach, backlink outreach, Search Console/GA4 reporting, auto-PRs for SEO fixes, multi-page crawling (the audit reads the homepage only).
-- Video export needs WebCodecs (Chrome/Edge, Safari 17+). Firefox has no H.264 encoder; MP4 then goes through ffmpeg.wasm (~30 MB, loaded from unpkg).
-- Media jobs are polled from the browser. Results are not stored in Supabase Storage.
-- There are no automated E2E tests yet.
+- Generated apps are static site bundles (`index.html` plus CSS/JS, or a `package.json` project), not Next.js apps. GitHub push and Vercel deploy ship exactly those files, capped at 1.5 MB of source.
+- Social publishing runs on click only, with single-account env tokens (no per-user OAuth). Instagram needs an image URL, TikTok a video URL and lands in the inbox as a draft, and Framer has no public CMS write API, so it exports CSV instead.
+- The background publisher needs `CRON_SECRET` and `SCHEDULER_OWNER_USER_ID` plus channel tokens. On the Vercel Hobby plan its cron fires once a day, so a scheduled post is also a reminder and an `.ics` event.
+- MCP servers are listed with their tools, but agents never execute those tools for you.
+- Video export needs WebCodecs (Chrome/Edge, Safari 17+). Firefox has no H.264 encoder, so MP4 export goes through ffmpeg.wasm (~30 MB, loaded from unpkg).
+- Generated media is polled from the provider and never stored; only user uploads reach Supabase Storage (`media-uploads`). Vercel caps request bodies at 4.5 MB, so larger renders have to be uploaded by hand.
+- Nothing is posted, sent or published by a handoff or by the AI CMO: the posts it creates are unapproved drafts and every Meta object is created `PAUSED`.
+- There is no automated test suite. `scripts/qa-sweep.mjs` is a manual authenticated sweep: create a throwaway user, run it against a deployment, delete the user.
 
 ## AI CMO home, credits & settings (v6)
 

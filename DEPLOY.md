@@ -97,7 +97,7 @@ Then either push to the connected branch (Vercel builds automatically) or run
 ## Provisioned resources (created in this workspace)
 
 - **Supabase project** `ikarvo` — region **East US (North Virginia) / us-east-1**, project ref `kshnymikdhfunzbbncuo`.
-  All 9 migrations in `supabase/migrations` were applied (34 tables incl. `profiles`, `projects`,
+  All 9 migrations in `supabase/migrations` were applied (33 tables incl. `profiles`, `projects`,
   `campaigns`, `posts`, `brands`, `meta_connections`, `credit_events`).
 - **Vercel project** `ikarvo` — production domain `https://ikarvo.vercel.app`, Git repo
   `chiragkoshti3101-blip/ikarvo` connected on the `main` branch.
