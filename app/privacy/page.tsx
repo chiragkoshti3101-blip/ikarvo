@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 const UPDATED = 'November 20, 2026';
-const CONTACT = 'chiragkoshti3101@gmail.com';
+const CONTACT = 'chiragkoshti3101+legal@gmail.com';
 
 export default function Privacy() {
   return <div className="legal">

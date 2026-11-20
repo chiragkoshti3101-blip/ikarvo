@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 const UPDATED = 'November 20, 2026';
-const CONTACT = 'chiragkoshti3101@gmail.com';
+const CONTACT = 'chiragkoshti3101+legal@gmail.com';
 
 export default function Terms() {
   return <div className="legal">
@@ -53,7 +53,7 @@ export default function Terms() {
         <p>You can stop using Ikarvo and delete your account at any time. We may suspend or end access if these terms are broken or if required by law. Sections that by their nature survive termination, such as content ownership, disclaimers and liability limits, continue to apply.</p>
 
         <h2>Governing law</h2>
-        <p>These terms are governed by the laws of the United States and of the jurisdiction in which Ikarvo is operated, without regard to conflict-of-law rules.</p>
+        <p>These terms are governed by the laws of the State of Delaware, United States, without regard to conflict-of-law rules.</p>
 
         <h2>Contact</h2>
         <p>Questions about these terms: <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.</p>
