@@ -34,7 +34,7 @@ export async function POST(req: Request) {
       if (!rules.length) rules.push({ title: 'Healthy: scale carefully', why: `CTR ${s.ctr.toFixed(2)}%, frequency ${s.frequency.toFixed(1)}${s.cpa ? `, CPA ${m(s.cpa)}` : ''}.`, action: 'Raise the daily budget by at most 20% every 3 days to avoid resetting learning.', impact: 'medium', kind: 'budget' });
     }
     let recs = rules; let source: 'rules' | 'ai' = 'rules';
-    if (envValue('AI_API_KEY') && s && s.impressions > 0) {
+    if ((envValue('AI_API_KEY') || envValue('INCEPTION_API_KEY')) && s && s.impressions > 0) {
       const q = await consumeQuota(ctx.actor, 30, 'meta_recommend'); if (q) return q;
       try {
         const r = await chat({ json: true, temperature: 0.3, maxTokens: 1200, system: 'You are the performance-marketing lead of Ikarvo\'s AI CMO optimising a Meta ad campaign. Use ONLY the numbers given; never invent metrics. Return strict JSON {"recommendations":[{"title":string,"why":string (cite the numbers),"action":string (one concrete step),"impact":"high"|"medium"|"low","kind":"creative"|"audience"|"budget"|"delivery"|"tracking"}]} with 3-5 items, highest impact first.',

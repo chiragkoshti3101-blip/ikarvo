@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const actor = await requireActor(); if (actor instanceof NextResponse) return actor;
   const b = await readJson(req); const name = str(b?.name, 100), category = str(b?.category, 100), domain = str(b?.domain, 200).replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
   if (!name) return fail(400, 'Need the product name (write the strategy brief first).');
-  if (!envValue('AI_API_KEY')) return fail(503, 'Finding competitors needs an AI provider.', ['AI_API_KEY']);
+  if (!envValue('AI_API_KEY') && !envValue('INCEPTION_API_KEY')) return fail(503, 'Finding competitors needs an AI provider.', ['AI_API_KEY']);
   let hits: { title: string; url: string; snippet: string }[] = []; let source = 'model';
   if (envValue('BRAVE_SEARCH_API_KEY') || envValue('SERPER_API_KEY')) {
     try { hits = (await Promise.all([`${name} alternatives`, `${name} competitors`, `best ${category || name} tools`].map(q => webSearch(q, 8)))).flat(); source = 'search'; } catch { hits = []; }

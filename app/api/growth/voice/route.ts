@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const metrics = { words: words.length, sentences: sentences.length, avgSentence: Math.round(words.length / Math.max(1, sentences.length)), longSentences: sentences.filter(s => s.split(/\s+/).length > 28).length,
     readingEase: flesch, exclamations: (text.match(/!/g) ?? []).length, passiveHints: (text.match(/\b(is|are|was|were|be|been|being)\s+\w+ed\b/gi) ?? []).length, cliches: [...new Set(found)], emoji: (text.match(/\p{Extended_Pictographic}/gu) ?? []).length };
   let ai: unknown = null, aiError: string | null = null;
-  if (!envValue('AI_API_KEY')) aiError = 'Add AI_API_KEY for a voice score and rewrite suggestions; metrics above need no key.';
+  if (!envValue('AI_API_KEY') && !envValue('INCEPTION_API_KEY')) aiError = 'Add AI_API_KEY for a voice score and rewrite suggestions; metrics above need no key.';
   else {
     const limited = await consumeQuota(actor, 30, 'voice'); if (limited) return limited;
     try { const { content } = await chat({ json: true, temperature: 0.3, maxTokens: 1800, system: 'You are a brand editor. Score how well the text matches the brand voice (0-100) and list concrete fixes quoting the offending phrase. Return strict JSON: {"score":number,"verdict":string,"issues":[{"quote":string,"problem":string,"fix":string}],"rewrite":string}',
