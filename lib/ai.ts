@@ -1,5 +1,6 @@
 import 'server-only';
 import { envValue } from '@/lib/env';
+import { recordLastAnswered } from '@/lib/aiLastModel';
 
 export class AiError extends Error { constructor(message: string, public status = 502) { super(message); } }
 
@@ -16,10 +17,6 @@ export function aiModels(base?: string) {
   const chain = [primary, ...fallbacks.filter(m => m !== primary)].slice(0, 4);
   return { primary, fallbacks: chain.slice(1), chain };
 }
-
-// Which model last answered on this server instance. Serverless instances each keep their own, so it can be empty.
-let answered: { model: string; at: string } | null = null;
-export function lastAnsweredModel() { return answered; }
 
 function modelChain(explicit?: string) {
   const { primary, fallbacks } = aiModels(explicit);
@@ -71,7 +68,7 @@ export async function chat(opts: ChatOpts) {
       const content = choice?.message?.content;
       if (typeof content !== 'string' || !content.trim()) throw new AiError('The AI provider returned an empty response.');
       const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
-      answered = { model, at: new Date().toISOString() };
+      recordLastAnswered(model);
       return { content: content.trim(), model, finishReason };
     }
     tried.push(`${model} (${status})`);

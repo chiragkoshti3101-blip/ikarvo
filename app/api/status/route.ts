@@ -1,20 +1,21 @@
 import { NextResponse } from 'next/server';
 import { featureStatus, envValue } from '@/lib/env';
-import { aiModels, lastAnsweredModel } from '@/lib/ai';
+import { aiModels } from '@/lib/ai';
+import { readLastAnswered } from '@/lib/aiLastModel';
 export const dynamic = 'force-dynamic';
-// Reports which features are configured. Only booleans and env var *names* are exposed.
+// Reports which features are configured. Only booleans, env var *names* and model names are exposed, never values.
 export async function GET() {
   const status = featureStatus();
   const base = (envValue('AI_BASE_URL') || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
   const { primary, fallbacks, chain } = aiModels();
-  const answered = lastAnsweredModel();
+  const answered = await readLastAnswered();
   return NextResponse.json({
     ...status,
     ai: {
       ...status.ai,
       note: `Chain: ${chain.join(' → ')} via ${base}`,
       models: { primary, fallbacks, chain },
-      // Whatever answers first wins, so this is the model that actually served the last request on this instance.
+      // Read from storage, so every instance reports the same answer instead of only the one that served it.
       answering: answered?.model ?? null,
       answeringAt: answered?.at ?? null,
     },

@@ -132,7 +132,11 @@ lib/client/store.ts          Supabase or localStorage document store
 - New routes: `/api/credits`, `/api/cmo/{docs,competitors,chat}`, `/api/growth/{pagespeed,design,ugc,hn}`, `/api/notify/{status,test}`, `/api/cron/digest`, `/api/skills`, `/api/mcp`, `/api/team/invite`, `/api/account/delete`.
 - Migration: `supabase/migrations/20261020010000_credits_and_settings.sql`.
 
-Honest limits: MCP servers are listed (tools/list) but tools are not executed; team invites send a Supabase invite but don't share a workspace yet; Devices can only "sign out other sessions" (Supabase does not list sessions); PDF/DOCX uploads aren't parsed; Hacker News posting is manual.
+Honest limits: MCP servers are listed (tools/list) but tools are not executed; Devices can only "sign out other sessions" (Supabase does not list sessions); Hacker News posting is manual.
+
+Context files: `.md`/`.txt`/`.csv`/`.json` are read in the browser, and **PDF/DOCX are extracted server-side** by `/api/extract` (unpdf, mammoth) up to 4 MB, with the extracted text capped at 50,000 characters. A scanned PDF has no text layer and returns an error instead of OCR; legacy `.doc` (Word 97) is rejected — save it as `.docx`.
+
+Team workspaces: an invite writes a `workspace_members` row and sends a Supabase invite email (an address that already has an account gets no email — the workspace just appears in their switcher). Membership activates on the invitee's first sign-in with that address and then shares the workspace tables via `ws_can()` — projects, brands, campaigns, posts, listings, articles, visibility, crawls, competitors, reports, docs, creative/UGC, ads and launch/sequence data, with `viewer` read-only — including whatever the invited people create. Credits, chats, memories, settings, connected accounts (Meta included) and uploaded media stay personal: storage policies allow only the owner's own `<uid>/` folder, so videos and images are not shared.
 
 ## Ad Studio, integrations audit & plans (v7)
 
