@@ -12,6 +12,35 @@ export function appUrl(fallbackOrigin?: string) {
   return (v('APP_URL') || fallbackOrigin || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
+/**
+ * OpenAI-compatible providers we know the quirks of. A preset supplies the base URL, the model chain and the
+ * decoding constraints, so pointing at one only needs AI_API_KEY plus AI_PROVIDER (or a matching AI_BASE_URL).
+ */
+export type AiPreset = {
+  id: string; label: string; baseUrl: string; models: string[];
+  /** Inclusive temperature bounds the provider accepts; outside this it errors instead of clamping. */
+  temperature?: [number, number];
+  /** Some providers only accept the newer OpenAI token parameter name. */
+  tokenParam?: 'max_tokens' | 'max_completion_tokens';
+};
+
+const AI_PRESETS: Record<string, AiPreset> = {
+  inception: {
+    id: 'inception', label: 'Inception Mercury', baseUrl: 'https://api.inceptionlabs.ai/v1',
+    models: ['mercury-3', 'mercury-2.5', 'mercury-2'], temperature: [0.5, 1], tokenParam: 'max_completion_tokens',
+  },
+  openrouter: { id: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', models: [] },
+};
+
+/** Resolve the preset from AI_PROVIDER, else from the AI_BASE_URL host. Never returns a secret. */
+export function aiPreset(): AiPreset | null {
+  const named = v('AI_PROVIDER').toLowerCase();
+  if (named && AI_PRESETS[named]) return AI_PRESETS[named];
+  const base = v('AI_BASE_URL');
+  const host = Object.values(AI_PRESETS).find(p => base.includes(new URL(p.baseUrl).host));
+  return host ?? null;
+}
+
 export type FeatureKey = 'supabase' | 'ai' | 'github' | 'vercel' | 'stripe' | 'media' | 'sessions' | 'x' | 'linkedin' | 'wordpress' | 'reddit' | 'google' | 'search' | 'youtube' | 'xsearch' | 'grounded' | 'scheduler' | 'meta';
 export type Feature = { ok: boolean; label: string; missing: string[]; note?: string };
 
@@ -29,7 +58,7 @@ export function featureStatus(): Record<FeatureKey, Feature> & { preview: boolea
   return {
     preview: isPreviewMode(),
     supabase: { ok: !supa.length, label: 'Supabase auth & database', missing: supa },
-    ai: { ok: !ai.length, label: 'AI generation (OpenAI-compatible)', missing: ai, note: `Model: ${v('AI_MODEL') || 'openai/gpt-4o-mini'} via ${v('AI_BASE_URL') || 'https://openrouter.ai/api/v1'}` },
+    ai: { ok: !ai.length, label: aiPreset() ? `AI generation (${aiPreset()!.label})` : 'AI generation (OpenAI-compatible)', missing: ai, note: `Model: ${v('AI_MODEL') || aiPreset()?.models[0] || 'openai/gpt-4o-mini'} via ${v('AI_BASE_URL') || aiPreset()?.baseUrl || 'https://openrouter.ai/api/v1'}` },
     sessions: { ok: !sessions.length, label: 'Encrypted integration sessions', missing: sessions },
     github: { ok: !gh.length, label: 'GitHub OAuth + repo push', missing: gh },
     vercel: { ok: !vercelOAuth.length || vercelToken, label: 'Vercel deploy', missing: vercelToken ? [] : vercelOAuth, note: vercelToken && vercelOAuth.length ? 'Using server VERCEL_TOKEN (single-owner mode).' : undefined },

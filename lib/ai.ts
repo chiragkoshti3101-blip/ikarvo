@@ -1,5 +1,5 @@
 import 'server-only';
-import { envValue } from '@/lib/env';
+import { aiPreset, envValue } from '@/lib/env';
 import { recordLastAnswered } from '@/lib/aiLastModel';
 
 export class AiError extends Error { constructor(message: string, public status = 502) { super(message); } }
@@ -12,10 +12,27 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** The configured chain: AI_MODEL first, then AI_FALLBACK_MODELS. Quotas are per model, so one exhausted model must not take the product down. */
 export function aiModels(base?: string) {
-  const primary = base || envValue('AI_MODEL') || 'openai/gpt-4o-mini';
-  const fallbacks = (envValue('AI_FALLBACK_MODELS') || '').split(',').map(m => m.trim()).filter(Boolean);
+  const preset = aiPreset();
+  const primary = base || envValue('AI_MODEL') || preset?.models[0] || 'openai/gpt-4o-mini';
+  const configured = (envValue('AI_FALLBACK_MODELS') || '').split(',').map(m => m.trim()).filter(Boolean);
+  // A preset knows the rest of its own model family, so naming the provider is enough to get a working chain.
+  const fallbacks = configured.length ? configured : (preset?.models.slice(1) ?? []);
   const chain = [primary, ...fallbacks.filter(m => m !== primary)].slice(0, 4);
-  return { primary, fallbacks: chain.slice(1), chain };
+  return { primary, fallbacks: chain.slice(1), chain, provider: preset?.label ?? null };
+}
+
+/** Base URL, token parameter name and temperature bounds: per provider, and every value can be overridden by env. */
+function aiRuntime() {
+  const preset = aiPreset();
+  return {
+    base: (envValue('AI_BASE_URL') || preset?.baseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
+    tokenParam: preset?.tokenParam ?? 'max_tokens',
+    // Sending a temperature the provider rejects fails the whole call, so clamp instead of trusting the caller.
+    temperature: (t: number) => {
+      const [lo, hi] = preset?.temperature ?? [-Infinity, Infinity];
+      return Math.min(Math.max(t, lo), hi);
+    },
+  };
 }
 
 function modelChain(explicit?: string) {
@@ -35,7 +52,7 @@ async function providerError(res: Response) {
 export async function chat(opts: ChatOpts) {
   const key = envValue('AI_API_KEY');
   if (!key) throw new AiError('AI is not configured. Add AI_API_KEY (e.g. an OpenRouter key) to .env.local and restart.', 503);
-  const base = (envValue('AI_BASE_URL') || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+  const { base, tokenParam, temperature } = aiRuntime();
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
   if (envValue('AI_HTTP_REFERER')) headers['HTTP-Referer'] = envValue('AI_HTTP_REFERER');
   if (envValue('AI_APP_TITLE')) headers['X-Title'] = envValue('AI_APP_TITLE');
@@ -43,7 +60,7 @@ export async function chat(opts: ChatOpts) {
   const tried: string[] = [];
   let status = 0; let message = '';
   for (const model of modelChain(opts.model)) {
-    const payload = JSON.stringify({ model, temperature: opts.temperature ?? 0.5, max_tokens: opts.maxTokens ?? 3000,
+    const payload = JSON.stringify({ model, temperature: temperature(opts.temperature ?? 0.5), [tokenParam]: opts.maxTokens ?? 3000,
       ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
       messages: [{ role: 'system', content: opts.system }, { role: 'user', content: opts.user }] });
     let res: Response | null = null;

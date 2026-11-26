@@ -26,7 +26,7 @@ Preview mode skips sign-in and stores data in localStorage. It only works under 
 | Feature | Env vars | Provider-side setup |
 |---|---|---|
 | Accounts + cloud data | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Run the migrations (below). Under Auth → URL config, add `{APP_URL}/auth/callback`. |
-| AI (apps, ad concepts, marketing) | `AI_API_KEY`, optionally `AI_BASE_URL`, `AI_MODEL`, `AI_FALLBACK_MODELS` | Any OpenAI-compatible `/chat/completions` endpoint. OpenRouter is the default. |
+| AI (apps, ad concepts, marketing) | `AI_API_KEY`, optionally `AI_PROVIDER`, `AI_BASE_URL`, `AI_MODEL`, `AI_FALLBACK_MODELS` | Any OpenAI-compatible `/chat/completions` endpoint. `AI_PROVIDER` names a preset that fills in the rest — `inception` (Mercury: `mercury-3` → `mercury-2.5` → `mercury-2`, temperature clamped to 0.5–1.0, `max_completion_tokens`) or `openrouter` (default). One key is enough; `/api/status` shows the chain and which model actually answered. |
 | Integration sessions | `SESSION_SECRET` (`openssl rand -hex 32`) | Encrypts GitHub/Vercel tokens (AES-256-GCM, httpOnly cookie). |
 | GitHub | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub → Settings → Developer settings → OAuth App. Callback: `{APP_URL}/api/github/callback`. Scope requested: `repo`. |
 | Vercel (multi-user) | `VERCEL_CLIENT_ID`, `VERCEL_CLIENT_SECRET`, `VERCEL_INTEGRATION_SLUG` | Create a Vercel Integration. Redirect URL: `{APP_URL}/api/vercel/callback`. |
