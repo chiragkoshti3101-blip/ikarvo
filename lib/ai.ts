@@ -52,7 +52,7 @@ async function providerError(res: Response) {
 }
 
 export async function chat(opts: ChatOpts) {
-  const key = envValue('AI_API_KEY');
+  const key = envValue('AI_API_KEY') || envValue('INCEPTION_API_KEY');
   if (!key) throw new AiError('AI is not configured. Add AI_API_KEY (e.g. an OpenRouter key) to .env.local and restart.', 503);
   const { base, tokenParam, temperature } = aiRuntime();
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };

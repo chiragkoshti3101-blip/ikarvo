@@ -38,7 +38,8 @@ export function aiPreset(): AiPreset | null {
   if (named && AI_PRESETS[named]) return AI_PRESETS[named];
   const base = v('AI_BASE_URL');
   const host = Object.values(AI_PRESETS).find(p => base.includes(new URL(p.baseUrl).host));
-  return host ?? null;
+  // Vercel's Inception integration injects its own INCEPTION_API_KEY, so naming the provider twice is not required.
+  return host ?? (v('INCEPTION_API_KEY') ? AI_PRESETS.inception : null);
 }
 
 export type FeatureKey = 'supabase' | 'ai' | 'github' | 'vercel' | 'stripe' | 'media' | 'sessions' | 'x' | 'linkedin' | 'wordpress' | 'reddit' | 'google' | 'search' | 'youtube' | 'xsearch' | 'grounded' | 'scheduler' | 'meta';
@@ -48,7 +49,7 @@ function need(keys: string[]) { return keys.filter(k => !v(k)); }
 
 export function featureStatus(): Record<FeatureKey, Feature> & { preview: boolean } {
   const supa = need(['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY']);
-  const ai = need(['AI_API_KEY']);
+  const ai = v('AI_API_KEY') || v('INCEPTION_API_KEY') ? [] : ['AI_API_KEY'];
   const sessions = need(['SESSION_SECRET']);
   const gh = need(['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'SESSION_SECRET']);
   const vercelOAuth = need(['VERCEL_CLIENT_ID', 'VERCEL_CLIENT_SECRET', 'VERCEL_INTEGRATION_SLUG', 'SESSION_SECRET']);
