@@ -7,6 +7,7 @@ import { chat, AiError } from '@/lib/ai';
 import { fail, readJson, str } from '@/lib/http';
 import { parseJson } from '@/lib/ai';
 import { cleanFiles, KINDS, type AppFile, type Kind } from '@/lib/appfiles';
+import { MASTER_SYSTEM } from '@/lib/prompts/master';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
@@ -16,10 +17,13 @@ const TIER_CFG: Record<Tier, { model: () => string; maxTokens: number; plan: boo
   pro: { model: () => envValue('AI_MODEL_PRO') || envValue('AI_MODEL') || 'anthropic/claude-sonnet-4.5', maxTokens: 24000, plan: true, review: false },
   max: { model: () => envValue('AI_MODEL_MAX') || 'anthropic/claude-opus-4.1', maxTokens: 40000, plan: true, review: true },
 };
-const PLANNER = `You are a principal product engineer. Write a concise build plan for the request: the file list with one-line purposes, screens/pages, data model, key interactions and visual direction. Plain text, under 300 words. No code.`;
-const REVIEW = `\n\nYou are now REVIEWING a previous attempt. Check it against the request and plan: fix bugs, broken imports/links, missing required files, unhandled states, accessibility and visual polish. Return the complete corrected file set in the same JSON format.`;
+const PLANNER = `${MASTER_SYSTEM}\n\nYou are a principal product engineer. Write a concise build plan for the request: the file list with one-line purposes, screens/pages, data model, key interactions and visual direction. Plain text, under 300 words. No code.`;
+const REVIEW = `\n\n${MASTER_SYSTEM}\n\nYou are now REVIEWING a previous attempt. Check it against the request and plan: fix bugs, broken imports/links, missing required files, unhandled states, accessibility and visual polish. Return the complete corrected file set in the same JSON format.`;
 
-const SYSTEM = `You are a senior product engineer and designer. Produce one complete, production-quality, standalone HTML document for the user's app.
+// The master directive also describes the CMO reporting workflow; a build must not turn into a report or a questionnaire.
+const SCOPE = '\n- SCOPE: this task is the application build only. Do not output a business report, a plan document or a list of questions; apply the directive to make the app itself complete, realistic and specific to the request.';
+
+const SYSTEM = `${MASTER_SYSTEM}${SCOPE}\n\nYou are a senior product engineer and designer. Produce one complete, production-quality, standalone HTML document for the user's app.
 Rules:
 - Output ONLY the HTML document starting with <!doctype html>. No markdown, no commentary.
 - All CSS inside <style>, all JS inside <script>. No external JS libraries or build tools. Google Fonts <link> is allowed.
@@ -34,7 +38,7 @@ const JSON_OUT = 'Return ONLY a JSON object: {"files":[{"path":"...","content":"
 
 /** One prompt template per project type. Every template returns a file set; web and mobile also carry a previewable artefact. */
 const SYSTEMS: Record<Kind, string> = {
-  web: `You are a senior full-stack engineer and designer. Produce a full-stack Next.js 15 (App Router, TypeScript) project for the user's request.
+  web: `${MASTER_SYSTEM}${SCOPE}\n\nYou are a senior full-stack engineer and designer. Produce a full-stack Next.js 15 (App Router, TypeScript) project for the user's request.
 ${JSON_OUT}
 Rules:
 - Required: package.json (next, react, react-dom; scripts dev/build/start), tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, at least one API route under app/api/**/route.ts, and components under components/.
@@ -42,7 +46,7 @@ Rules:
 - ALSO include preview.html: ONE self-contained HTML document (inline CSS and JS, no external JS) that faithfully renders the main screens of the app with working client-side interactions. It is shown as the live preview.
 ${COMMON}
 - At most 20 files.`,
-  mobile: `You are a senior React Native engineer and mobile designer. Produce an Expo (SDK 52) React Native app for the user's request.
+  mobile: `${MASTER_SYSTEM}${SCOPE}\n\nYou are a senior React Native engineer and mobile designer. Produce an Expo (SDK 52) React Native app for the user's request.
 ${JSON_OUT}
 Rules:
 - Required: package.json (expo, react, react-native, expo-status-bar; "main": "node_modules/expo/AppEntry.js"), app.json, babel.config.js, and App.js.
@@ -50,7 +54,7 @@ Rules:
 - Use StyleSheet.create, SafeAreaView, ScrollView/FlatList, Pressable and TextInput. Design for a 390x844 phone screen with touch-sized targets and a bottom tab bar when there are several screens.
 ${COMMON}
 - At most 8 files.`,
-  site: `You are a senior web designer and front-end engineer. Produce a static multi-page marketing website for the user's request.
+  site: `${MASTER_SYSTEM}${SCOPE}\n\nYou are a senior web designer and front-end engineer. Produce a static multi-page marketing website for the user's request.
 ${JSON_OUT}
 Rules:
 - Required: index.html plus 2-5 more pages that fit the brief (e.g. features.html, pricing.html, about.html, contact.html), styles.css and main.js.

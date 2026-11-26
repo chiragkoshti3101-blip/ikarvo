@@ -746,6 +746,8 @@ html[data-theme=dark] .cta>div{background:#0c0b0a;border:1px solid var(--line)}h
 .b-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .b-chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line-2);background:var(--card);border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer;color:var(--ink-2);transition:transform .2s var(--ease-out),border-color .15s}
 .b-chip:hover{border-color:var(--acc);transform:translateY(-1px)}
+.b-chip.on{border-color:var(--acc);background:var(--acc-soft,color-mix(in srgb,var(--acc) 12%,transparent));color:var(--ink)}
+.b-decide{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;margin:10px 0 14px}
 .b-steps{display:flex;gap:22px;list-style:none;padding:0;margin:10px 0 0;color:var(--mut);font-size:13px;flex-wrap:wrap;justify-content:center}
 .b-steps b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--paper-2);color:var(--ink);font:600 11px var(--font-mono);margin-right:7px}
 .b-recent{margin-top:56px}.b-recent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:12px}

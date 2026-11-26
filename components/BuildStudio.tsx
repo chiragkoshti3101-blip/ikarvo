@@ -48,7 +48,7 @@ export default function BuildStudio() {
   const [tab, setTab] = useState<'preview' | 'code'>('preview'); const [device, setDevice] = useState<'desktop' | 'tablet' | 'phone'>('desktop');
   const [pane, setPane] = useState<'chat' | 'preview'>('chat');
   const [busy, setBusy] = useState(''); const [phase, setPhase] = useState(0); const [error, setError] = useState<unknown>(null);
-  const [repo, setRepo] = useState(''); const [kind, setKind] = useState<Kind>('web'); const [webOn, setWebOn] = useState(false); const [tier, setTierS] = useState<Tier>('pro'); const [tierOpen, setTierOpen] = useState(false); const tierRef = useRef<HTMLSpanElement>(null); const [opts, setOpts] = useState(false); const [listening, setListening] = useState(false); const [canTalk, setCanTalk] = useState(false); const rec = useRef<Speech | null>(null); const optRef = useRef<HTMLSpanElement>(null); const [page, setPage] = useState('index.html'); const [file, setFile] = useState('index.html');
+  const [repo, setRepo] = useState(''); const [kind, setKind] = useState<Kind>('web'); const [webOn, setWebOn] = useState(false); const [tier, setTierS] = useState<Tier>('pro'); const [tierOpen, setTierOpen] = useState(false); const tierRef = useRef<HTMLSpanElement>(null);   const [opts, setOpts] = useState(false); const [listening, setListening] = useState(false); const [canTalk, setCanTalk] = useState(false); const [autoDecide, setAutoDecide] = useState(false); const rec = useRef<Speech | null>(null); const optRef = useRef<HTMLSpanElement>(null); const [page, setPage] = useState('index.html'); const [file, setFile] = useState('index.html');
   const [ship, setShip] = useState(false); const [viewing, setViewing] = useState<number | null>(null); const [nonce, setNonce] = useState(0);
   const [recent, setRecent] = useState<Doc<Project>[]>([]);
   const log = useRef<HTMLDivElement>(null);
@@ -85,7 +85,7 @@ export default function BuildStudio() {
     try { const d = await store.save('projects', { id, title: t, data: next }); setId(d.id); setTitle(d.title); } catch (e) { setError(e); }
   }
   async function generate() {
-    const ask = draft.trim(); if (ask.length < 4) return;
+    const ask = (draft.trim() + (autoDecide ? '\n\n[Choose as per you: Ikarvo, make all remaining product, design, architecture and feature decisions autonomously and record them in the build.]' : '')).trim(); if (ask.length < 4) return;
     setBusy('generate'); setError(null); setViewing(null); setPane('preview');
     try {
       let out: Pick<Project, 'html' | 'files' | 'model' | 'kind'>;
@@ -126,6 +126,7 @@ export default function BuildStudio() {
   async function attach(f?: File) { if (!f) return;
     try { const t = await readText(f); setDraft(d => `${d}${d ? '\n\n' : ''}Context from ${f.name}:\n${t}`.slice(0, 6000)); toast(`${f.name} attached`); } catch (e) { toast(e instanceof Error ? e.message : String(e), 'err'); } }
   const T = TYPES[kind];
+  const decideRow = <div className="b-decide"><button className={`b-chip ${autoDecide ? 'on' : ''}`} aria-pressed={autoDecide} title="Ikarvo picks the remaining product, design and architecture decisions" onClick={() => { const v = !autoDecide; setAutoDecide(v); toast(v ? 'Choose as per you: Ikarvo decides the remaining product and design calls' : 'Ikarvo now follows only what you describe'); }}>Choose as per you<Icon name={autoDecide ? 'check' : 'spark'} size={13} /></button><span className="small muted">Let Ikarvo make all remaining decisions.</span></div>;
   const typePicker = <div className="b-types" role="radiogroup" aria-label="Project type">{(Object.keys(TYPES) as Kind[]).map(k => <button key={k} role="radio" aria-checked={kind === k} aria-label={TYPES[k].label} title={`${TYPES[k].label}: ${TYPES[k].hint}`} className={kind === k ? 'on' : ''} disabled={!!busy} onClick={() => setKind(k)}><Icon name={TYPES[k].icon} size={15} />{kind === k && <span>{TYPES[k].label}</span>}</button>)}</div>;
 
   const composer = (big?: boolean) => <div className={`b-composer ${big ? 'big' : ''}`}>
@@ -152,6 +153,7 @@ export default function BuildStudio() {
       <p className="muted">Describe it in plain words. Ikarvo writes a working app you can refine by chat, preview on any device, push to GitHub and deploy to Vercel.</p>
       {from && <div className="nextbar"><span>From {from}</span><p className="small muted">The brief is prefilled. Review it, then build.</p></div>}
       {typePicker}
+      {decideRow}
       {composer(true)}
       <ErrorNote error={error} onClose={() => setError(null)} />
       {!status.ai.ok && <p className="small muted">No AI key on this server (needs <code>AI_API_KEY</code>). <button className="link" onClick={useStarter}>Open the hand-written starter</button> to try preview, export and deploy.</p>}
@@ -207,6 +209,7 @@ export default function BuildStudio() {
         <ErrorNote error={error} onClose={() => setError(null)} />
         {p.html && (!p.files || kindOf(p) !== kind) && <p className="small muted b-note">Next run rebuilds this as a {TYPES[kind].label.toLowerCase()} ({TYPES[kind].hint}).</p>}
         {typePicker}
+        {decideRow}
         {composer()}
       </section>
 
