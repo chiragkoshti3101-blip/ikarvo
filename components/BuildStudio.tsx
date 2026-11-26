@@ -8,6 +8,8 @@ import { STARTER_HTML } from '@/lib/client/templates';
 import { TIERS, TIER_INFO, isTier, type Tier } from '@/lib/tiers';
 import { ACCEPT, readText } from '@/lib/client/extract';
 import { previewDoc, mobileDoc, withShim, zip, type AppFile, type Kind } from '@/lib/appfiles';
+import BuildIntake from './BuildIntake';
+import { INTAKE_DEFAULTS, normalizeIntake, type Intake } from '@/lib/intake';
 
 /** Project types: each one changes the prompt template on the server and the preview here. */
 const TYPES: Record<Kind, { label: string; icon: string; hint: string; placeholder: string; chips: { title: string; prompt: string }[] }> = {
@@ -51,6 +53,7 @@ export default function BuildStudio() {
   const [repo, setRepo] = useState(''); const [kind, setKind] = useState<Kind>('web'); const [webOn, setWebOn] = useState(false); const [tier, setTierS] = useState<Tier>('pro'); const [tierOpen, setTierOpen] = useState(false); const tierRef = useRef<HTMLSpanElement>(null);   const [opts, setOpts] = useState(false); const [listening, setListening] = useState(false); const [canTalk, setCanTalk] = useState(false); const [autoDecide, setAutoDecide] = useState(false); const rec = useRef<Speech | null>(null); const optRef = useRef<HTMLSpanElement>(null); const [page, setPage] = useState('index.html'); const [file, setFile] = useState('index.html');
   const [ship, setShip] = useState(false); const [viewing, setViewing] = useState<number | null>(null); const [nonce, setNonce] = useState(0);
   const [recent, setRecent] = useState<Doc<Project>[]>([]);
+  const [intake, setIntakeS] = useState<Intake>(INTAKE_DEFAULTS);
   const log = useRef<HTMLDivElement>(null);
 
   const versions = p.versions ?? []; const live = viewing != null ? versions[viewing] : null;
@@ -65,6 +68,8 @@ export default function BuildStudio() {
   const PHASES = TIER_INFO[tier].steps;
   const setTier = (t: Tier) => { setTierS(t); setTierOpen(false); try { localStorage.setItem('ikarvo:tier', t); } catch {} toast(`${TIER_INFO[t].label}: ${TIER_INFO[t].desc}`); };
   useEffect(() => { try { const t = localStorage.getItem('ikarvo:tier'); if (isTier(t)) setTierS(t); } catch {} }, []);
+  useEffect(() => { try { const s = localStorage.getItem('ikarvo:intake'); if (s) setIntakeS(normalizeIntake(JSON.parse(s))); } catch {} }, []);
+  const setIntake = (i: Intake) => { setIntakeS(i); try { localStorage.setItem('ikarvo:intake', JSON.stringify(i)); } catch {} };
   useEffect(() => { if (!tierOpen) return; const off = (e: Event) => { if (!tierRef.current?.contains(e.target as Node)) setTierOpen(false); }; const esc = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setTierOpen(false); };
     document.addEventListener('pointerdown', off); document.addEventListener('keydown', esc); return () => { document.removeEventListener('pointerdown', off); document.removeEventListener('keydown', esc); }; }, [tierOpen]);
   useEffect(() => { if (!opts) return; const off = (e: Event) => { if (!optRef.current?.contains(e.target as Node)) setOpts(false); }; const esc = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setOpts(false); };
@@ -90,7 +95,7 @@ export default function BuildStudio() {
     try {
       let out: Pick<Project, 'html' | 'files' | 'model' | 'kind'>;
       { const same = !!p.files && kindOf(p) === kind;
-        const r = await api<{ files: AppFile[]; model: string }>('/api/generate', { prompt: ask, kind, web: webOn, tier, previousFiles: same ? p.files : undefined });
+        const r = await api<{ files: AppFile[]; model: string }>('/api/generate', { prompt: ask, kind, web: webOn, tier, intake, previousFiles: same ? p.files : undefined });
         out = { files: r.files, html: previewFor(kind, r.files), model: r.model, kind }; if (!r.files.some(f => f.path === page)) setPage('index.html'); if (!r.files.some(f => f.path === file)) setFile('index.html'); }
       const v: Version = { at: new Date().toISOString(), prompt: ask, ...out };
       const next: Project = { ...p, ...out, prompt: p.prompt || ask, versions: [...versions, v].slice(-MAX_VERSIONS) };
@@ -155,6 +160,7 @@ export default function BuildStudio() {
       {typePicker}
       {decideRow}
       {composer(true)}
+      <BuildIntake intake={intake} onChange={setIntake} githubOk={status.github.ok} />
       <ErrorNote error={error} onClose={() => setError(null)} />
       {!status.ai.ok && <p className="small muted">No AI key on this server (needs <code>AI_API_KEY</code>). <button className="link" onClick={useStarter}>Open the hand-written starter</button> to try preview, export and deploy.</p>}
       <div className="b-chips" aria-label="Starting points">{T.chips.map(s => <button key={s.title} className="b-chip" onClick={() => setDraft(s.prompt)}><Icon name="spark" size={13} />{s.title}</button>)}</div>
@@ -210,6 +216,7 @@ export default function BuildStudio() {
         {p.html && (!p.files || kindOf(p) !== kind) && <p className="small muted b-note">Next run rebuilds this as a {TYPES[kind].label.toLowerCase()} ({TYPES[kind].hint}).</p>}
         {typePicker}
         {decideRow}
+        <BuildIntake intake={intake} onChange={setIntake} githubOk={status.github.ok} />
         {composer()}
       </section>
 

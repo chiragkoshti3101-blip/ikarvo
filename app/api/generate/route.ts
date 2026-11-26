@@ -8,6 +8,7 @@ import { fail, readJson, str } from '@/lib/http';
 import { parseJson } from '@/lib/ai';
 import { cleanFiles, KINDS, type AppFile, type Kind } from '@/lib/appfiles';
 import { BUILD_STANDARD } from '@/lib/prompts/master';
+import { normalizeIntake, intakeBrief } from '@/lib/intake';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
@@ -68,6 +69,8 @@ export async function POST(req: Request) {
   const prompt = str(body.prompt, 6000); const previous = str(body.previousHtml, 40000);
   const kind: Kind | null = KINDS.includes(body.kind as Kind) ? body.kind as Kind : body.multi === true ? 'site' : null;
   const web = body.web === true; const tier: Tier = isTier(body.tier) ? body.tier : 'pro'; const cfg = TIER_CFG[tier]; const tm = cfg.model(); const temperature = 0.3;
+  // The picker's answers travel with the request; the server never trusts raw strings from the client.
+  const chosen = intakeBrief(normalizeIntake(body.intake));
   let prevFiles: AppFile[] | null = null;
   if (kind && body.previousFiles) { try { prevFiles = cleanFiles(body.previousFiles); } catch (e) { return fail(400, e instanceof Error ? e.message : String(e)); } }
   if (prompt.length < 4) return fail(400, 'Describe what you want to build.');
@@ -75,8 +78,8 @@ export async function POST(req: Request) {
   const extra = web ? '\n\nYou may use real photos from https://images.unsplash.com (hot-linked) where they help.' : '';
   if (kind) try {
     const steps: string[] = []; let plan = '';
-    if (cfg.plan) { plan = (await chat({ system: PLANNER, temperature: 0.2, maxTokens: 1500, model: tm, user: `PROJECT TYPE: ${kind}\n\nREQUEST:\n${prompt}${prevFiles ? `\n\nCURRENT FILES: ${prevFiles.map(f => f.path).join(', ')}` : ''}` })).content; steps.push('plan'); }
-    const brief = prevFiles ? `Revise this project. Keep everything that works unless asked otherwise. Return the complete file set.\n\nREQUEST:\n${prompt}\n\nCURRENT FILES:\n${JSON.stringify(prevFiles).slice(0, 60000)}` : `Build:\n${prompt}`;
+    if (cfg.plan) { plan = (await chat({ system: PLANNER, temperature: 0.2, maxTokens: 1500, model: tm, user: `PROJECT TYPE: ${kind}\n\nREQUEST:\n${prompt}${chosen}${prevFiles ? `\n\nCURRENT FILES: ${prevFiles.map(f => f.path).join(', ')}` : ''}` })).content; steps.push('plan'); }
+    const brief = prevFiles ? `Revise this project. Keep everything that works unless asked otherwise. Return the complete file set.\n\nREQUEST:\n${prompt}${chosen}\n\nCURRENT FILES:\n${JSON.stringify(prevFiles).slice(0, 60000)}` : `Build:\n${prompt}${chosen}`;
     // A long file set can stop at the output limit or come back malformed. One corrective retry recovers most of those
     // instead of charging the user for a failed build.
     const system = SYSTEMS[kind] + extra;
