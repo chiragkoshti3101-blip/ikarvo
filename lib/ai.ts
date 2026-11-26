@@ -44,8 +44,10 @@ function modelChain(explicit?: string) {
 async function providerError(res: Response) {
   const body = await res.text().catch(() => '');
   try {
-    const j = JSON.parse(body) as { error?: { message?: string; status?: string }; message?: string };
-    return (j?.error?.message || j?.error?.status || j?.message || body).slice(0, 220);
+    const j = JSON.parse(body) as { error?: { message?: unknown; status?: unknown }; message?: unknown };
+    const m = j?.error?.message ?? j?.error?.status ?? j?.message;
+    // Some providers (Inception among them) nest an object here, which used to reach the user as "[object Object]".
+    return (typeof m === 'string' ? m : m ? JSON.stringify(m) : body).slice(0, 220);
   } catch { return body.slice(0, 220); }
 }
 
