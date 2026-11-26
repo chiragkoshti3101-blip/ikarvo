@@ -18,23 +18,27 @@ function serviceKey() { return envValue('SUPABASE_SERVICE_ROLE_KEY'); }
 
 function canPersist() { return !!supabaseUrl() && !!serviceKey(); }
 
-export function recordLastAnswered(model: string) {
+export async function recordLastAnswered(model: string) {
   const value: Answered = { model, at: new Date().toISOString() };
   memory = value;
   cached = value;
   cachedAt = Date.now();
   if (!canPersist()) return;
-  // Fire-and-forget: never block the AI response on a bookkeeping write.
-  void fetch(`${supabaseUrl()}/storage/v1/object/${BUCKET}/${PATH}`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceKey(),
-      Authorization: `Bearer ${serviceKey()}`,
-      'Content-Type': 'application/json',
-      'x-upsert': 'true',
-    },
-    body: JSON.stringify(value),
-  }).catch(() => { /* best effort */ });
+  try {
+    // Awaited on purpose: a fire-and-forget request is dropped when the serverless function freezes after the
+    // response, which left the stored value stale. The timeout keeps a slow storage call off the critical path.
+    await fetch(`${supabaseUrl()}/storage/v1/object/${BUCKET}/${PATH}`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey(),
+        Authorization: `Bearer ${serviceKey()}`,
+        'Content-Type': 'application/json',
+        'x-upsert': 'true',
+      },
+      body: JSON.stringify(value),
+      signal: AbortSignal.timeout(1500),
+    });
+  } catch { /* best effort: the in-memory value still answers this instance */ }
 }
 
 export async function readLastAnswered(): Promise<Answered> {

@@ -87,7 +87,7 @@ export async function chat(opts: ChatOpts) {
       const content = choice?.message?.content;
       if (typeof content !== 'string' || !content.trim()) throw new AiError('The AI provider returned an empty response.');
       const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
-      recordLastAnswered(model);
+      await recordLastAnswered(model);
       return { content: content.trim(), model, finishReason };
     }
     tried.push(`${model} (${status})`);
