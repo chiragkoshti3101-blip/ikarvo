@@ -52,7 +52,9 @@ export async function chat(opts: ChatOpts) {
         res = await fetch(`${base}/chat/completions`, { method: 'POST', headers, signal: AbortSignal.timeout(90_000), body: payload });
       } catch (e) {
         const m = e instanceof Error ? e.message : String(e);
-        if (/timeout|abort/i.test(m)) throw new AiError('The AI provider timed out. Try again or use a faster model.');
+        // A model that hangs (rather than answering 429) would burn the whole budget, so treat it like a failure
+        // of that model and let the chain move on.
+        if (/timeout|abort/i.test(m)) { status = 504; message = `no response within 90s`; break; }
         if (attempt === 0) { await sleep(1500); continue; }
         throw new AiError(`Could not reach the AI provider: ${m}`);
       }
