@@ -44,9 +44,9 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
   { path: 'app/api/data/route.ts', purpose: 'read and write records' },
 ];
 
-const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: purpose\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 8 to 14 files. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add only the components and screens this product actually needs. Relative paths, lowercase folders, no spaces.\n- Tailwind is not installed: the design lives in app/globals.css.\n- preview.html is one self-contained HTML document that renders the main screens.`;
+const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: purpose\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 8 to 14 files. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add only the components and screens this product actually needs. Relative paths, lowercase folders, no spaces.\n- No CSS framework is installed (no Tailwind): the design lives in app/globals.css as real class names.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
-const webFileSystem = (paths: string[], outline: OutlinePart[], note = '') => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\nThe product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve, every component and export used exists in the file list above, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' on components that use state, effects, events or browser APIs. Do not import next/image, next/font or any package that is not in package.json.\n- Data access: lib/ holds the store with typed helpers; API routes validate input, return JSON and set status codes; client code calls those routes.\n- Tailwind is not installed. Styles go in app/globals.css (imported by app/layout.tsx) and components use className.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
+const webFileSystem = (paths: string[], outline: OutlinePart[], note = '') => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\nThe product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve, every component and export used exists in the file list above, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' on components that use state, effects, events or browser APIs. Do not import next/image, next/font or any package that is not in package.json.\n- Data access: lib/ holds the store with typed helpers; API routes validate input, return JSON and set status codes; client code calls those routes.\n- No CSS framework is installed: no Tailwind, no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Write real class names in app/globals.css and use those className values.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
 
 function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -54,17 +54,37 @@ function chunk<T>(xs: T[], n: number): T[][] {
   return out;
 }
 
+/** A file that stops mid-token must never reach the project: it compiles into nonsense the user has to find. */
+function looksComplete(path: string, content: string): boolean {
+  const body = content.trim();
+  if (!body) return false;
+  if (/\\.html?$/i.test(path)) return /<\/html>\s*$/i.test(body);
+  if (/\\.json$/i.test(path)) { try { JSON.parse(body); return true; } catch { return false; } }
+  const count = (re: RegExp) => (body.match(re) || []).length;
+  const braces = count(/\{/g) - count(/\}/g);
+  const parens = count(/\(/g) - count(/\)/g);
+  const ticks = count(/`/g) % 2;
+  if (braces !== 0 || parens !== 0 || ticks !== 0) return false;
+  if (/[=(,]$/.test(body)) return false;
+  return !/```/.test(body);
+}
+
 /** Files are written between ===FILE: path=== markers, so a reply cut short still yields every complete file before the cut. */
 function partsFrom(text: string, wanted: string[]): AppFile[] {
-  const marks = [...text.matchAll(/^===FILE:\s*([^\s=]+)\s*===\s*$/gm)];
+  const marks = [...text.matchAll(/^[ \t]*===FILE:\s*([^\s=]+)\s*===\s*$/gm)];
   const out: AppFile[] = [];
   for (let i = 0; i < marks.length; i++) {
     const path = marks[i][1].trim().replace(/^(\.\/)+/, '');
     const from = (marks[i].index ?? 0) + marks[i][0].length;
     const to = i + 1 < marks.length ? marks[i + 1].index : text.length;
-    let content = text.slice(from, to ?? text.length).replace(/^\r?\n/, '');
-    content = content.replace(/\r?\n```\s*$/, '').replace(/\n{3,}$/, '\n').trimEnd();
-    if (content && (!wanted.length || wanted.includes(path))) out.push({ path, content });
+    const content = text.slice(from, to ?? text.length)
+      .replace(/^\r?\n/, '')
+      .replace(/^[ \t]*```[a-zA-Z]*\r?\n/, '')
+      .replace(/\r?\n[ \t]*```\s*$/, '')
+      .trimEnd();
+    if (!content || (wanted.length && !wanted.includes(path))) continue;
+    if (!looksComplete(path, content)) continue; // dropped, the repair pass asks for it again
+    out.push({ path, content });
   }
   return out;
 }
@@ -97,12 +117,12 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const config = list.filter(p => CORE_FILE.test(p.path));
   const preview = list.filter(p => p.path === 'preview.html');
   const rest = list.filter(p => !CORE_FILE.test(p.path) && p.path !== 'preview.html');
-  const groups = [...(config.length ? [config] : []), ...chunk(rest, 4), ...(preview.length ? [preview] : [])];
+  const groups = [...(config.length ? [config] : []), ...chunk(rest, 3), ...(preview.length ? [preview] : [])];
   const files: AppFile[] = [];
   const write = async (paths: string[]) => {
     const system = webFileSystem(paths, list, user);
     const ask = `Write exactly these files now: ${paths.join(', ')}. Start with ===FILE: ${paths[0]}=== and use one ===FILE: path=== marker per file.`;
-    const cap = paths.includes('preview.html') ? 16000 : 12000;
+    const cap = paths.includes('preview.html') ? 20000 : 12000;
     let got: AppFile[];
     try { got = partsFrom((await chat({ system, temperature, maxTokens: cap, model: tm, user: ask })).content, paths); }
     catch (e) {
