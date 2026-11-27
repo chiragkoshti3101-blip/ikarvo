@@ -44,26 +44,41 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
   { path: 'app/api/data/route.ts', purpose: 'read and write records' },
 ];
 
-const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou are the lead engineer on a Next.js 15 (App Router, TypeScript, React 19) product. Plan the project before it is written.\nReturn ONLY JSON: {"files":[{"path":"app/page.tsx","purpose":"one line"}]}.\nRules:\n- 8 to 14 files. These are required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add the components and screens the request needs. Relative paths only, no spaces, lowercase folders.\n- Tailwind is NOT installed: the design lives in app/globals.css.\n- preview.html is one self-contained HTML document that renders the main screens with working client-side interactions.\n- Every path you list will be written, so keep the list to what the product actually needs.`;
+const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: purpose\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 8 to 14 files. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add only the components and screens this product actually needs. Relative paths, lowercase folders, no spaces.\n- Tailwind is not installed: the design lives in app/globals.css.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
-const webFileSystem = (paths: string[], outline: OutlinePart[]) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\nWrite ONLY these files now: ${paths.join(', ')}.\nReturn ONLY JSON: {"files":[{"path":"...","content":"..."}]} containing exactly those paths.\nRules:\n- Every file is complete: all imports resolve, every component and export used exists in the file list above, nothing is a TODO.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' on components that use state, effects, events or browser APIs. Do not use next/image, next/font or any package that is not in package.json.\n- Data access: lib/ holds the store with typed helpers; API routes validate input, return JSON and set status codes; client code calls those routes.\n- Tailwind is not installed. Styles go in app/globals.css (imported by app/layout.tsx) and components use className.\n- preview.html, when listed, is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.`;
+const webFileSystem = (paths: string[], outline: OutlinePart[], note = '') => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\nThe product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve, every component and export used exists in the file list above, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' on components that use state, effects, events or browser APIs. Do not import next/image, next/font or any package that is not in package.json.\n- Data access: lib/ holds the store with typed helpers; API routes validate input, return JSON and set status codes; client code calls those routes.\n- Tailwind is not installed. Styles go in app/globals.css (imported by app/layout.tsx) and components use className.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
 
 function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
   return out;
 }
-const filesFrom = (text: string): AppFile[] => (parseJson<{ files?: AppFile[] }>(text).files ?? [])
-  .filter(f => f && typeof f.path === 'string' && typeof f.content === 'string')
-  .map(f => ({ path: f.path.trim(), content: f.content }));
 
-/** Plan the project, then write it in batches small enough that no reply is cut off. */
+/** Files are written between ===FILE: path=== markers, so a reply cut short still yields every complete file before the cut. */
+function partsFrom(text: string, wanted: string[]): AppFile[] {
+  const marks = [...text.matchAll(/^===FILE:\s*([^\s=]+)\s*===\s*$/gm)];
+  const out: AppFile[] = [];
+  for (let i = 0; i < marks.length; i++) {
+    const path = marks[i][1].trim().replace(/^(\.\/)+/, '');
+    const from = (marks[i].index ?? 0) + marks[i][0].length;
+    const to = i + 1 < marks.length ? marks[i + 1].index : text.length;
+    let content = text.slice(from, to ?? text.length).replace(/^\r?\n/, '');
+    content = content.replace(/\r?\n```\s*$/, '').replace(/\n{3,}$/, '\n').trimEnd();
+    if (content && (!wanted.length || wanted.includes(path))) out.push({ path, content });
+  }
+  return out;
+}
+
+/** Plan the project, then write it in batches small enough that no reply is cut off, retrying only what is missing. */
 async function webProject(opts: { user: string; maxTokens: number; tm: string; temperature: number; steps: string[] }) {
   const { user, tm, temperature, steps } = opts;
   let raw: OutlinePart[] = [];
   try {
-    const outlineRes = await chat({ system: WEB_OUTLINE, temperature: 0.2, maxTokens: 4000, json: true, model: tm, user });
-    raw = parseJson<{ files?: OutlinePart[] }>(outlineRes.content).files ?? [];
+    const outlineRes = await chat({ system: WEB_OUTLINE, temperature: 0.2, maxTokens: 1600, model: tm, user });
+    raw = outlineRes.content.split('\n').map(line => {
+      const m = line.match(/^[\s\-*\d.)]*`?([A-Za-z0-9_\-./]+\.(?:tsx|ts|css|json|html|md))`?\s*(?:::|—|-)?\s*(.*)$/);
+      return m ? { path: m[1], purpose: m[2].trim().slice(0, 160) } : null;
+    }).filter((p): p is OutlinePart => !!p);
     steps.push('outline');
   } catch (e) {
     if (!(e instanceof AiError)) throw e;
@@ -75,37 +90,30 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   for (const p of raw) {
     const path = String(p?.path ?? '').trim().replace(/^(\.\/)+/, '');
     if (!PATH_OK.test(path) || !/\.(tsx|ts|css|json|html|md)$/i.test(path) || seen.has(path)) continue;
-    seen.add(path); outline.push({ path, purpose: String(p?.purpose ?? '').slice(0, 160) });
+    seen.add(path); outline.push({ path, purpose: String(p?.purpose ?? '') || 'product file' });
   }
   for (const path of REQUIRED_WEB) if (!seen.has(path)) { seen.add(path); outline.push({ path, purpose: 'required project file' }); }
-  const list = outline.slice(0, 18);
+  const list = outline.slice(0, 16);
   const config = list.filter(p => CORE_FILE.test(p.path));
   const preview = list.filter(p => p.path === 'preview.html');
   const rest = list.filter(p => !CORE_FILE.test(p.path) && p.path !== 'preview.html');
-  const groups = [...(config.length ? [config] : []), ...chunk(rest, 3), ...(preview.length ? [preview] : [])];
+  const groups = [...(config.length ? [config] : []), ...chunk(rest, 4), ...(preview.length ? [preview] : [])];
   const files: AppFile[] = [];
-  const write = async (paths: string[], cap: number) => {
-    const system = webFileSystem(paths, list);
-    const ask = `${user}\n\nWRITE THESE FILES NOW: ${paths.join(', ')}`;
-    try { return filesFrom((await chat({ system, temperature, maxTokens: cap, json: true, model: tm, user: ask })).content); }
-    catch (e) {
-      if (!(e instanceof AiError)) throw e;
-      // A batch that still overruns gets one terser attempt with a larger budget.
-      const again = await chat({ system: `${system}\n\nReturn ONLY the JSON object. Keep each file lean: no comments, compact CSS, minimal markup, but every file complete.`, temperature: 0.2, maxTokens: Math.min(cap * 2, 24000), json: true, model: tm, user: ask });
-      return filesFrom(again.content);
-    }
+  const write = async (paths: string[]) => {
+    const system = webFileSystem(paths, list, user);
+    const ask = `Write exactly these files now: ${paths.join(', ')}. Start with ===FILE: ${paths[0]}=== and use one ===FILE: path=== marker per file.`;
+    const got = partsFrom((await chat({ system, temperature, maxTokens: paths.includes('preview.html') ? 16000 : 12000, model: tm, user: ask })).content, paths);
+    files.push(...got);
+    steps.push(`wrote:${got.length}/${paths.length}`);
+    return got.map(f => f.path);
   };
-  for (const group of groups) {
-    const paths = group.map(p => p.path);
-    const cap = paths.includes('preview.html') ? 16000 : 12000;
-    const got = await write(paths, cap);
-    files.push(...got.filter(f => paths.includes(f.path)));
-    steps.push(`files:${paths.length}`);
-  }
-  const missing = REQUIRED_WEB.filter(r => !files.some(f => f.path === r));
-  if (missing.length) {
-    files.push(...(await write(missing, 12000)).filter(f => missing.includes(f.path)));
-    steps.push('fill-missing');
+  for (const group of groups) await write(group.map(p => p.path));
+  // Anything still missing (a batch cut short, or skipped) gets one repair pass of two files at a time.
+  for (let round = 0; round < 2; round++) {
+    const missing = list.map(p => p.path).filter(path => !files.some(f => f.path === path));
+    if (!missing.length) break;
+    steps.push(`repair:${missing.length}`);
+    for (const group of chunk(missing, 2)) await write(group);
   }
   return cleanFiles(files);
 }
