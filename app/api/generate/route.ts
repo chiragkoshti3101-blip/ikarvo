@@ -186,6 +186,45 @@ function bareImports(files: AppFile[]): string[] {
   return [...out];
 }
 
+/** Types and interfaces a module exports, so a file that uses one without importing it can be repaired. */
+function exportedTypes(content: string): string[] {
+  const out = new Set<string>();
+  for (const m of content.matchAll(/export\s+(?:declare\s+)?(?:type|interface|enum)\s+([A-Za-z0-9_$]+)/g)) out.add(m[1]);
+  return [...out];
+}
+
+/** A route that writes `Partial<Order>` without importing Order fails the build; add the type import. */
+function fixTypeImports(files: AppFile[]): number {
+  let fixed = 0;
+  for (const f of files) {
+    if (!/\.(tsx?)$/.test(f.path)) continue;
+    const specs = [...new Set([...f.content.matchAll(/from\s+['"](\.[^'"]+)['"]/g)].map(m => m[1]))];
+    const bySpec = new Map<string, string[]>();
+    for (const spec of specs) {
+      const { hit } = resolveImport(f.path, spec, files);
+      if (!hit || hit.path === f.path) continue;
+      for (const name of exportedTypes(hit.content)) {
+        if (!new RegExp(`\\b${name}\\b`).test(f.content)) continue;
+        if (new RegExp(`import[^;]*\\b${name}\\b[^;]*from`).test(f.content)) continue;
+        const names = bySpec.get(spec) ?? [];
+        if (!names.includes(name)) names.push(name);
+        bySpec.set(spec, names);
+      }
+    }
+    if (!bySpec.size) continue;
+    const lines = [...bySpec].map(([spec, names]) => `import type { ${names.join(', ')} } from '${spec}';`).join('\n');
+    const last = [...f.content.matchAll(/^import[^\n]*\n/gm)].pop();
+    if (last && last.index !== undefined) {
+      const at = last.index + last[0].length;
+      f.content = f.content.slice(0, at) + lines + '\n' + f.content.slice(at);
+    } else {
+      f.content = lines + '\n' + f.content;
+    }
+    for (const names of bySpec.values()) fixed += names.length;
+  }
+  return fixed;
+}
+
 /** Plan the project, then write it in batches small enough that no reply is cut off, retrying only what is missing. */
 async function webProject(opts: { user: string; maxTokens: number; tm: string; temperature: number; steps: string[] }) {
   const { user, tm, temperature, steps } = opts;
@@ -277,6 +316,8 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   }
   const rewritten = fixImports(files);
   if (rewritten) steps.push(`imports:${rewritten}`);
+  const typed = fixTypeImports(files);
+  if (typed) steps.push(`types:${typed}`);
   // Repair: a module imported for a name it does not export.
   const need = new Map<string, Set<string>>();
   for (const f of files) for (const m of f.content.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+['"](\.[^'"]+)['"]/g)) {
