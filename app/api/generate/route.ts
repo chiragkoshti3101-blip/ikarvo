@@ -46,7 +46,7 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
 
 const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: what it contains and exports\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 6 to 9 files, no more. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, one app/api/**/route.ts, and lib/store.ts with the types and the data store.\n- Keep the screens in app/page.tsx (it is a client component). Add at most TWO component files, only if a screen really needs one, and say in the outline exactly which props each takes.\n- Never plan a .module.css file or any per-component stylesheet: every class lives in app/globals.css.\n- Relative paths, lowercase folders, no spaces.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
-const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.
+const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Imports are limited to next, react, react-dom, and at most one of date-fns, clsx, nanoid, uuid, zod, recharts when it genuinely helps. Dates, class names, ids and icons can always be written inline; do that first.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.
 - Call only the API routes that appear in the file list above, with exactly those paths.\n- Any component whose source is included above is already written: import it exactly as exported and pass only the props its source declares. If it does not fit what the page needs, render that markup inline instead of inventing props. If you need two resources, either use one route with a query parameter or list both routes.
 - The store seeds 6 to 8 plausible records for this business the first time it runs, so no screen is empty on first load, and the UI says once that they are sample records.
 - The JSON store must also work on a read-only serverless filesystem, because this project is meant to deploy as-is: resolve its directory with process.env.VERCEL ? '/tmp/data' : path.join(process.cwd(), 'data'), create it before writing, and never assume a write succeeded without awaiting it. Seeding happens inside the store, so a fresh instance still shows records.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Give every element a semantic class name (shell, sidebar, kpi-row, data-table, ...): app/globals.css is written after your files, from the classes you use, and it will style all of them.
@@ -164,6 +164,28 @@ function fixImports(files: AppFile[]): number {
   return fixed;
 }
 
+/** Packages a generated project is allowed to pull in, with a version that is known to install and work. */
+const KNOWN_PACKAGES: Record<string, string> = {
+  'date-fns': '^4.1.0', clsx: '^2.1.1', nanoid: '^5.0.9', uuid: '^11.0.3',
+  zod: '^3.24.1', 'lucide-react': '^0.469.0', 'class-variance-authority': '^0.7.1', recharts: '^2.15.0',
+};
+const BUILTIN_IMPORT = /^(next(\/.*)?|react(-dom)?(\/.*)?|node:.*|fs|fs\/promises|path|os|crypto|util|url|stream|events|buffer|child_process)$/;
+
+/** Every bare package a project imports, so the lockfile can be made true instead of the build failing. */
+function bareImports(files: AppFile[]): string[] {
+  const out = new Set<string>();
+  for (const f of files) {
+    if (!/\.(tsx?|jsx?)$/.test(f.path)) continue;
+    for (const m of f.content.matchAll(/(?:from\s+|import\s*\(\s*|require\(\s*)['"]([^'".][^'"]*)['"]/g)) {
+      const spec = m[1];
+      if (spec.startsWith('@/') || spec.startsWith('.')) continue;
+      const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0];
+      if (pkg && !BUILTIN_IMPORT.test(pkg)) out.add(pkg);
+    }
+  }
+  return [...out];
+}
+
 /** Plan the project, then write it in batches small enough that no reply is cut off, retrying only what is missing. */
 async function webProject(opts: { user: string; maxTokens: number; tm: string; temperature: number; steps: string[] }) {
   const { user, tm, temperature, steps } = opts;
@@ -271,6 +293,28 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     const system = `${BUILD_STANDARD}\n\nYou are rewriting ONE file of a Next.js 15 (TypeScript) project so other files compile against it.\nFile: ${path}\nIt must export these names, because other files already import them: ${[...names].join(', ')}.\nKeep it small, complete, typed, and consistent with the rest of the project:\n${list.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\nOutput only ===FILE: ${path}=== followed by the whole file.`;
     const got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 6000, model: tm, user: `Product: ${user}\n\nRewrite ${path} with those exports.` })).content, [path]);
     for (const f of got) put(f);
+  }
+  // Dependencies: add the packages we know, and rewrite anything that would need a package we cannot install.
+  const pkgFile = files.find(f => f.path === 'package.json');
+  if (pkgFile) {
+    try {
+      const pkg = JSON.parse(pkgFile.content) as { dependencies?: Record<string, string> };
+      pkg.dependencies ??= {};
+      const imported = bareImports(files);
+      const missing = imported.filter(n => !pkg.dependencies![n]);
+      const addable = missing.filter(n => KNOWN_PACKAGES[n]);
+      const unknown = missing.filter(n => !KNOWN_PACKAGES[n]);
+      for (const n of addable) pkg.dependencies[n] = KNOWN_PACKAGES[n];
+      if (addable.length) { pkgFile.content = JSON.stringify(pkg, null, 2); steps.push(`deps:+${addable.join(',')}`); }
+      if (unknown.length) {
+        steps.push(`deps:unknown:${unknown.join(',')}`);
+        const users = files.filter(f => /\.(tsx?)$/.test(f.path) && unknown.some(n => new RegExp(`from\\s+['"]${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(f.content))).slice(0, 2);
+        for (const f of users) {
+          const fixed = await chat({ system: `${BUILD_STANDARD}\n\nRewrite ONE file of a Next.js 15 (TypeScript) project so it needs no package beyond those already in package.json.\nIt currently imports ${unknown.join(', ')}, which are not installed and cannot be added. Replace those usages with plain TypeScript/React: format dates with Intl.DateTimeFormat, class names with template strings, icons with inline SVG, ids with crypto.randomUUID().\nKeep everything else identical. Output only ===FILE: ${f.path}=== followed by the whole file.`, temperature: 0.2, maxTokens: 9000, model: tm, user: `File to rewrite:\n===FILE: ${f.path}===\n${f.content}` });
+          for (const g of partsFrom(fixed.content, [f.path])) put(g);
+        }
+      }
+    } catch { steps.push('deps:unreadable'); }
   }
   // A preview is the face of the build, so make one more, deliberately small, attempt before giving up.
   if (!files.some(f => f.path === 'preview.html')) {
