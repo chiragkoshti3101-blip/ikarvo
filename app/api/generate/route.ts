@@ -47,6 +47,7 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
 const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: what it contains and exports\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 6 to 9 files, no more. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, one app/api/**/route.ts, and lib/store.ts with the types and the data store.\n- Keep the screens in app/page.tsx (it is a client component). Add at most TWO component files, only if a screen really needs one, and say in the outline exactly which props each takes.\n- Never plan a .module.css file or any per-component stylesheet: every class lives in app/globals.css.\n- Relative paths, lowercase folders, no spaces.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
 const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.
+- Call only the API routes that appear in the file list above, with exactly those paths. If you need two resources, either use one route with a query parameter or list both routes.
 - The store seeds 6 to 8 plausible records for this business the first time it runs, so no screen is empty on first load, and the UI says once that they are sample records.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Give every element a semantic class name (shell, sidebar, kpi-row, data-table, ...): app/globals.css is written after your files, from the classes you use, and it will style all of them.
 - A dashboard opens with three or four KPI values computed from the records (revenue, open orders, bags/units, batches), then the filters, then the table. Not a table alone.
 - TypeScript must compile with zero errors, and nobody can run tsc for you: keep types simple. A generic component that spreads a partial row writes: { field } as unknown as Partial<T>. Do not build one generic helper that two different record types share. Sort and filter helpers take a key: string and read the value with record[key] after a local cast, or exist once per table with that table's own row type. Every function argument must match its declared signature at every call site.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
@@ -68,7 +69,10 @@ function looksComplete(path: string, content: string): boolean {
   const parens = count(/\(/g) - count(/\)/g);
   const ticks = count(/`/g) % 2;
   if (braces !== 0 || parens !== 0 || ticks !== 0) return false;
-  if (/[=(,]$/.test(body)) return false;
+  if (/[=(,|&+]$/.test(body)) return false;
+  // A function header with no body, or a dangling arrow, is the shape a cut file leaves behind.
+  if (/function\s+[\w$]+\s*\([^)]*\)\s*(?::\s*[^{;]+)?$/.test(body)) return false;
+  if (/=>\s*$/.test(body)) return false;
   return !/```/.test(body);
 }
 
@@ -183,6 +187,10 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     seen.add(path); outline.push({ path, purpose: String(p?.purpose ?? '') || 'product file' });
   }
   for (const path of REQUIRED_WEB) if (!seen.has(path)) { seen.add(path); outline.push({ path, purpose: 'required project file' }); }
+  if (!outline.some(p => /^app\/api\/.+\/route\.ts$/.test(p.path))) {
+    outline.push({ path: 'app/api/data/route.ts', purpose: 'API routes for reading and updating the records' });
+    seen.add('app/api/data/route.ts');
+  }
   const list = outline.slice(0, 14);
   const files: AppFile[] = [];
   const wanted = new Set(list.map(p => p.path));
