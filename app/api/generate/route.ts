@@ -36,7 +36,7 @@ const JSON_OUT = 'Return ONLY a JSON object: {"files":[{"path":"...","content":"
 type OutlinePart = { path: string; purpose: string };
 const PATH_OK = /^(?!\/)(?!.*\.\.)[a-zA-Z0-9_\-./]{1,120}$/;
 const CORE_FILE = /^(package\.json|tsconfig\.json|next\.config\.[a-z]+|\.env\.example|README\.md|\.gitignore|postcss\.config\.js)$/;
-const REQUIRED_WEB = ['package.json', 'tsconfig.json', 'app/layout.tsx', 'app/page.tsx', 'app/globals.css', 'preview.html'];
+const REQUIRED_WEB = ['package.json', 'tsconfig.json', 'app/layout.tsx', 'app/page.tsx', 'app/globals.css', 'preview.html', 'lib/store.ts'];
 /** Used when the outline reply itself is unusable, so one bad planning reply cannot kill the build. */
 const DEFAULT_WEB_FILES: OutlinePart[] = [
   ...REQUIRED_WEB.map(path => ({ path, purpose: 'required project file' })),
@@ -356,6 +356,26 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
         }
       }
     } catch { steps.push('deps:unreadable'); }
+  }
+  // A relative import that still points at nothing would break the build; write the smallest module that satisfies it.
+  const orphans = new Map<string, Set<string>>();
+  for (const f of files) for (const m of f.content.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+['"](\.[^'"]+)['"]/g)) {
+    const { target, hit } = resolveImport(f.path, m[2], files);
+    if (hit) continue;
+    const path = /\.(tsx?|jsx?|css)$/.test(target) ? target : `${target}.ts`;
+    if (!PATH_OK.test(path)) continue;
+    const bucket = orphans.get(path) ?? new Set<string>();
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/)[0]?.trim();
+      if (name) bucket.add(name);
+    }
+    orphans.set(path, bucket);
+  }
+  for (const [path, names] of [...orphans].slice(0, 2)) {
+    steps.push(`module:${path}`);
+    const system = `${BUILD_STANDARD}\n\nYou are writing ONE missing module of a Next.js 15 (TypeScript) project. Other files already import it, so it must exist and export exactly these names: ${[...names].join(', ')}.\nPath: ${path}\nThe project:\n${list.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\nWrite the module those imports imply: real types and functions, no placeholder, no comments. Output only ===FILE: ${path}=== followed by the file.`;
+    const got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 6000, model: tm, user: `Product: ${user}\n\nWrite ${path} exporting ${[...names].join(', ')}.` })).content, [path]);
+    for (const f of got) put(f);
   }
   // A preview is the face of the build, so make one more, deliberately small, attempt before giving up.
   if (!files.some(f => f.path === 'preview.html')) {
