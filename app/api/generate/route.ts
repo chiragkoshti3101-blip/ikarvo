@@ -30,6 +30,73 @@ Rules:
 - No analytics, trackers, or code that sends data to third parties.`;
 const JSON_OUT = 'Return ONLY a JSON object: {"files":[{"path":"...","content":"..."}, ...]}. No markdown.';
 
+// ---- Web apps are assembled in batches ----------------------------------------------------------------
+// A full Next.js project does not fit in one reply: the model stops mid-file and the whole build is lost.
+// So the file list is planned first, then each small group is written on its own and merged.
+type OutlinePart = { path: string; purpose: string };
+const PATH_OK = /^(?!\/)(?!.*\.\.)[a-zA-Z0-9_\-./]{1,120}$/;
+const CORE_FILE = /^(package\.json|tsconfig\.json|next\.config\.[a-z]+|\.env\.example|README\.md|\.gitignore|postcss\.config\.js)$/;
+const REQUIRED_WEB = ['package.json', 'tsconfig.json', 'app/layout.tsx', 'app/page.tsx', 'app/globals.css', 'preview.html'];
+
+const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou are the lead engineer on a Next.js 15 (App Router, TypeScript, React 19) product. Plan the project before it is written.\nReturn ONLY JSON: {"files":[{"path":"app/page.tsx","purpose":"one line"}]}.\nRules:\n- 8 to 14 files. These are required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add the components and screens the request needs. Relative paths only, no spaces, lowercase folders.\n- Tailwind is NOT installed: the design lives in app/globals.css.\n- preview.html is one self-contained HTML document that renders the main screens with working client-side interactions.\n- Every path you list will be written, so keep the list to what the product actually needs.`;
+
+const webFileSystem = (paths: string[], outline: OutlinePart[]) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\nWrite ONLY these files now: ${paths.join(', ')}.\nReturn ONLY JSON: {"files":[{"path":"...","content":"..."}]} containing exactly those paths.\nRules:\n- Every file is complete: all imports resolve, every component and export used exists in the file list above, nothing is a TODO.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' on components that use state, effects, events or browser APIs. Do not use next/image, next/font or any package that is not in package.json.\n- Data access: lib/ holds the store with typed helpers; API routes validate input, return JSON and set status codes; client code calls those routes.\n- Tailwind is not installed. Styles go in app/globals.css (imported by app/layout.tsx) and components use className.\n- preview.html, when listed, is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.`;
+
+function chunk<T>(xs: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
+}
+const filesFrom = (text: string): AppFile[] => (parseJson<{ files?: AppFile[] }>(text).files ?? [])
+  .filter(f => f && typeof f.path === 'string' && typeof f.content === 'string')
+  .map(f => ({ path: f.path.trim(), content: f.content }));
+
+/** Plan the project, then write it in batches small enough that no reply is cut off. */
+async function webProject(opts: { user: string; maxTokens: number; tm: string; temperature: number; steps: string[] }) {
+  const { user, tm, temperature, steps } = opts;
+  const outlineRes = await chat({ system: WEB_OUTLINE, temperature: 0.2, maxTokens: 1800, json: true, model: tm, user });
+  steps.push('outline');
+  const raw = parseJson<{ files?: OutlinePart[] }>(outlineRes.content).files ?? [];
+  const seen = new Set<string>();
+  const outline: OutlinePart[] = [];
+  for (const p of raw) {
+    const path = String(p?.path ?? '').trim().replace(/^(\.\/)+/, '');
+    if (!PATH_OK.test(path) || !/\.(tsx|ts|css|json|html|md)$/i.test(path) || seen.has(path)) continue;
+    seen.add(path); outline.push({ path, purpose: String(p?.purpose ?? '').slice(0, 160) });
+  }
+  for (const path of REQUIRED_WEB) if (!seen.has(path)) { seen.add(path); outline.push({ path, purpose: 'required project file' }); }
+  const list = outline.slice(0, 18);
+  const config = list.filter(p => CORE_FILE.test(p.path));
+  const preview = list.filter(p => p.path === 'preview.html');
+  const rest = list.filter(p => !CORE_FILE.test(p.path) && p.path !== 'preview.html');
+  const groups = [...(config.length ? [config] : []), ...chunk(rest, 3), ...(preview.length ? [preview] : [])];
+  const files: AppFile[] = [];
+  const write = async (paths: string[], cap: number) => {
+    const system = webFileSystem(paths, list);
+    const ask = `${user}\n\nWRITE THESE FILES NOW: ${paths.join(', ')}`;
+    try { return filesFrom((await chat({ system, temperature, maxTokens: cap, json: true, model: tm, user: ask })).content); }
+    catch (e) {
+      if (!(e instanceof AiError)) throw e;
+      // A batch that still overruns gets one terser attempt with a larger budget.
+      const again = await chat({ system: `${system}\n\nReturn ONLY the JSON object. Keep each file lean: no comments, compact CSS, minimal markup, but every file complete.`, temperature: 0.2, maxTokens: Math.min(cap * 2, 24000), json: true, model: tm, user: ask });
+      return filesFrom(again.content);
+    }
+  };
+  for (const group of groups) {
+    const paths = group.map(p => p.path);
+    const cap = paths.includes('preview.html') ? 12000 : Math.min(8000, opts.maxTokens);
+    const got = await write(paths, cap);
+    files.push(...got.filter(f => paths.includes(f.path)));
+    steps.push(`files:${paths.length}`);
+  }
+  const missing = REQUIRED_WEB.filter(r => !files.some(f => f.path === r));
+  if (missing.length) {
+    files.push(...(await write(missing, 9000)).filter(f => missing.includes(f.path)));
+    steps.push('fill-missing');
+  }
+  return cleanFiles(files);
+}
+
 /** One prompt template per project type. Every template returns a file set; web and mobile also carry a previewable artefact. */
 const SYSTEMS: Record<Kind, string> = {
   web: `${BUILD_STANDARD}\n\nYou are a senior full-stack engineer and designer. Produce a full-stack Next.js 15 (App Router, TypeScript) project for the user's request.
@@ -78,6 +145,12 @@ export async function POST(req: Request) {
   const extra = web ? '\n\nYou may use real photos from https://images.unsplash.com (hot-linked) where they help.' : '';
   if (kind) try {
     const steps: string[] = []; let plan = '';
+    // A web app is planned and written in batches; a single reply cannot hold the whole project.
+    if (kind === 'web' && !prevFiles) {
+      const files = await webProject({ user: `Build:\n${prompt}${chosen}${extra}`, maxTokens: cfg.maxTokens, tm, temperature, steps });
+      if (!files.some(f => f.path === 'preview.html')) throw new AiError('The AI did not return a preview for this web app. Try again.');
+      return NextResponse.json({ files, model: tm, kind, tier, steps });
+    }
     if (cfg.plan) { plan = (await chat({ system: PLANNER, temperature: 0.2, maxTokens: 1500, model: tm, user: `PROJECT TYPE: ${kind}\n\nREQUEST:\n${prompt}${chosen}${prevFiles ? `\n\nCURRENT FILES: ${prevFiles.map(f => f.path).join(', ')}` : ''}` })).content; steps.push('plan'); }
     const brief = prevFiles ? `Revise this project. Keep everything that works unless asked otherwise. Return the complete file set.\n\nREQUEST:\n${prompt}${chosen}\n\nCURRENT FILES:\n${JSON.stringify(prevFiles).slice(0, 60000)}` : `Build:\n${prompt}${chosen}`;
     // A long file set can stop at the output limit or come back malformed. One corrective retry recovers most of those
