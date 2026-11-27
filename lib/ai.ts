@@ -8,7 +8,12 @@ type ChatOpts = { system: string; user: string; temperature?: number; maxTokens?
 
 // Providers (Gemini, OpenAI, OpenRouter) return 429/5xx under load or when a model's quota is spent.
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+// A 403 can mean the whole key is blocked, or just that this one model is closed to new accounts. Only the second
+// case should move on to the next model instead of ending the call.
+const MODEL_ONLY_403 = /model|not available to accounts|does not exist|not found|deprecated|use .* instead/i;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+/** Models this process has learned it cannot use, so every later call skips them instead of paying for the refusal. */
+const unavailable = new Set<string>();
 
 /** The configured chain: AI_MODEL first, then AI_FALLBACK_MODELS. Quotas are per model, so one exhausted model must not take the product down. */
 export function aiModels(base?: string) {
@@ -17,8 +22,10 @@ export function aiModels(base?: string) {
   const configured = (envValue('AI_FALLBACK_MODELS') || '').split(',').map(m => m.trim()).filter(Boolean);
   // A preset knows the rest of its own model family, so naming the provider is enough to get a working chain.
   const fallbacks = configured.length ? configured : (preset?.models.slice(1) ?? []);
-  const chain = [primary, ...fallbacks.filter(m => m !== primary)].slice(0, 4);
-  return { primary, fallbacks: chain.slice(1), chain, provider: preset?.label ?? null };
+  const chain = [primary, ...fallbacks.filter(m => m !== primary)].filter(m => !unavailable.has(m)).slice(0, 4);
+  // If every configured model is known-bad, still return them: a stale refusal is better than no attempt at all.
+  if (!chain.length) return { primary, fallbacks: [primary], chain: [primary], provider: preset?.label ?? null };
+  return { primary: chain[0], fallbacks: chain.slice(1), chain, provider: preset?.label ?? null };
 }
 
 /** Base URL, token parameter name and temperature bounds: per provider, and every value can be overridden by env. */
@@ -93,6 +100,8 @@ export async function chat(opts: ChatOpts) {
       return { content: content.trim(), model, finishReason };
     }
     tried.push(`${model} (${status})`);
+    // One closed model is not a closed key: remember it and let the next model answer.
+    if (status === 403 && MODEL_ONLY_403.test(message)) { unavailable.add(model); continue; }
     // A key or billing problem is not per-model, so spend no further models on it.
     if (status === 401 || status === 402 || status === 403) break;
     if (Date.now() > deadline) break;
