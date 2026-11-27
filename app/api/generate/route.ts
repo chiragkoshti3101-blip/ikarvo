@@ -102,7 +102,15 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const write = async (paths: string[]) => {
     const system = webFileSystem(paths, list, user);
     const ask = `Write exactly these files now: ${paths.join(', ')}. Start with ===FILE: ${paths[0]}=== and use one ===FILE: path=== marker per file.`;
-    const got = partsFrom((await chat({ system, temperature, maxTokens: paths.includes('preview.html') ? 16000 : 12000, model: tm, user: ask })).content, paths);
+    const cap = paths.includes('preview.html') ? 16000 : 12000;
+    let got: AppFile[];
+    try { got = partsFrom((await chat({ system, temperature, maxTokens: cap, model: tm, user: ask })).content, paths); }
+    catch (e) {
+      if (!(e instanceof AiError)) throw e;
+      // One tighter retry: a provider that chokes on a big request usually answers a smaller one.
+      steps.push('retry-smaller');
+      got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 6000, model: tm, user: ask })).content, paths);
+    }
     files.push(...got);
     steps.push(`wrote:${got.length}/${paths.length}`);
     return got.map(f => f.path);

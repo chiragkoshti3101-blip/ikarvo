@@ -94,7 +94,12 @@ export async function chat(opts: ChatOpts) {
       const data = await res.json().catch(() => ({}));
       const choice = data?.choices?.[0];
       const content = choice?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) throw new AiError('The AI provider returned an empty response.');
+      // An empty completion is a per-model failure, not a reason to give up: the next model often answers.
+      if (typeof content !== 'string' || !content.trim()) {
+        status = 502; message = 'the model returned an empty reply'; tried.push(`${model} (empty)`);
+        if (Date.now() > deadline) break;
+        continue;
+      }
       const finishReason = typeof choice?.finish_reason === 'string' ? choice.finish_reason : '';
       await recordLastAnswered(model);
       return { content: content.trim(), model, finishReason };
