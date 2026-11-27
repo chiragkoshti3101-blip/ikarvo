@@ -37,6 +37,12 @@ type OutlinePart = { path: string; purpose: string };
 const PATH_OK = /^(?!\/)(?!.*\.\.)[a-zA-Z0-9_\-./]{1,120}$/;
 const CORE_FILE = /^(package\.json|tsconfig\.json|next\.config\.[a-z]+|\.env\.example|README\.md|\.gitignore|postcss\.config\.js)$/;
 const REQUIRED_WEB = ['package.json', 'tsconfig.json', 'app/layout.tsx', 'app/page.tsx', 'app/globals.css', 'preview.html'];
+/** Used when the outline reply itself is unusable, so one bad planning reply cannot kill the build. */
+const DEFAULT_WEB_FILES: OutlinePart[] = [
+  ...REQUIRED_WEB.map(path => ({ path, purpose: 'required project file' })),
+  { path: 'lib/store.ts', purpose: 'typed data store and sample records' },
+  { path: 'app/api/data/route.ts', purpose: 'read and write records' },
+];
 
 const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou are the lead engineer on a Next.js 15 (App Router, TypeScript, React 19) product. Plan the project before it is written.\nReturn ONLY JSON: {"files":[{"path":"app/page.tsx","purpose":"one line"}]}.\nRules:\n- 8 to 14 files. These are required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add the components and screens the request needs. Relative paths only, no spaces, lowercase folders.\n- Tailwind is NOT installed: the design lives in app/globals.css.\n- preview.html is one self-contained HTML document that renders the main screens with working client-side interactions.\n- Every path you list will be written, so keep the list to what the product actually needs.`;
 
@@ -54,9 +60,16 @@ const filesFrom = (text: string): AppFile[] => (parseJson<{ files?: AppFile[] }>
 /** Plan the project, then write it in batches small enough that no reply is cut off. */
 async function webProject(opts: { user: string; maxTokens: number; tm: string; temperature: number; steps: string[] }) {
   const { user, tm, temperature, steps } = opts;
-  const outlineRes = await chat({ system: WEB_OUTLINE, temperature: 0.2, maxTokens: 1800, json: true, model: tm, user });
-  steps.push('outline');
-  const raw = parseJson<{ files?: OutlinePart[] }>(outlineRes.content).files ?? [];
+  let raw: OutlinePart[] = [];
+  try {
+    const outlineRes = await chat({ system: WEB_OUTLINE, temperature: 0.2, maxTokens: 4000, json: true, model: tm, user });
+    raw = parseJson<{ files?: OutlinePart[] }>(outlineRes.content).files ?? [];
+    steps.push('outline');
+  } catch (e) {
+    if (!(e instanceof AiError)) throw e;
+    steps.push('outline-fallback');
+  }
+  if (raw.length < 4) { raw = [...DEFAULT_WEB_FILES, ...raw]; steps.push('outline-default'); }
   const seen = new Set<string>();
   const outline: OutlinePart[] = [];
   for (const p of raw) {
@@ -84,14 +97,14 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   };
   for (const group of groups) {
     const paths = group.map(p => p.path);
-    const cap = paths.includes('preview.html') ? 12000 : Math.min(8000, opts.maxTokens);
+    const cap = paths.includes('preview.html') ? 16000 : 12000;
     const got = await write(paths, cap);
     files.push(...got.filter(f => paths.includes(f.path)));
     steps.push(`files:${paths.length}`);
   }
   const missing = REQUIRED_WEB.filter(r => !files.some(f => f.path === r));
   if (missing.length) {
-    files.push(...(await write(missing, 9000)).filter(f => missing.includes(f.path)));
+    files.push(...(await write(missing, 12000)).filter(f => missing.includes(f.path)));
     steps.push('fill-missing');
   }
   return cleanFiles(files);
@@ -143,8 +156,10 @@ export async function POST(req: Request) {
   if (prompt.length < 4) return fail(400, 'Describe what you want to build.');
   const limited = await consumeQuota(actor, 30, 'generate'); if (limited) return limited;
   const extra = web ? '\n\nYou may use real photos from https://images.unsplash.com (hot-linked) where they help.' : '';
-  if (kind) try {
-    const steps: string[] = []; let plan = '';
+  if (kind) {
+    const steps: string[] = [];
+    try {
+    let plan = '';
     // A web app is planned and written in batches; a single reply cannot hold the whole project.
     if (kind === 'web' && !prevFiles) {
       const files = await webProject({ user: `Build:\n${prompt}${chosen}${extra}`, maxTokens: cfg.maxTokens, tm, temperature, steps });
@@ -182,7 +197,14 @@ export async function POST(req: Request) {
     if (kind === 'web' && !files.some(f => f.path === 'preview.html')) throw new AiError('The AI did not return a preview for this web app. Try again.');
     if (kind === 'mobile' && !files.some(f => /^(src\/)?App\.(js|jsx|tsx|ts)$/.test(f.path))) throw new AiError('The AI did not return App.js for this mobile app. Try again.');
     return NextResponse.json({ files, model, kind, tier, steps });
-  } catch (e) { await refund(actor, 'generate'); const err = e instanceof AiError ? e : new AiError(e instanceof Error ? e.message : String(e)); return fail(err.status, err.message, err.status === 503 ? ['AI_API_KEY'] : undefined); }
+    } catch (e) {
+      await refund(actor, 'generate');
+      const err = e instanceof AiError ? e : new AiError(e instanceof Error ? e.message : String(e));
+      console.error('[generate]', err.message, steps.join(' > '));
+      // The steps travel with the error so a failed build can be diagnosed without guessing.
+      return NextResponse.json({ error: err.message, steps, ...(err.status === 503 ? { setup: ['AI_API_KEY'] } : {}) }, { status: err.status });
+    }
+  }
   try {
     const { content, model } = await chat({ system: SYSTEM, temperature: 0.3, maxTokens: cfg.maxTokens, model: tm,
       user: previous ? `Revise this app. Keep everything that works unless asked otherwise.\n\nREQUEST:\n${prompt}\n\nCURRENT HTML:\n${previous}` : `Build:\n${prompt}` });
