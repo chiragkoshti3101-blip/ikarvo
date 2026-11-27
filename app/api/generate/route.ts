@@ -197,6 +197,10 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const sharedNow = () => files
     .filter(f => f.path.startsWith('lib/'))
     .map(f => `===FILE: ${f.path}===\n${f.content}`).join('\n\n');
+  const put = (f: AppFile) => {
+    const i = files.findIndex(x => x.path === f.path);
+    if (i >= 0) files[i] = f; else files.push(f);
+  };
   const write = async (paths: string[], extra = '') => {
     const system = webFileSystem(paths, list, user, sharedNow()) + extra;
     const ask = `Write exactly these files now: ${paths.join(', ')}. Start with ===FILE: ${paths[0]}=== and use one ===FILE: path=== marker per file.`;
@@ -237,7 +241,7 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     const system = `${BUILD_STANDARD}\n\nYou are writing app/globals.css for a Next.js 15 project. It is imported once in app/layout.tsx and is the ONLY stylesheet.\nThe screens are already written and use exactly these class names: ${used.join(', ') || '(none)'}.\nEvery one of them must be styled, plus base elements (html, body, buttons, inputs, table).\nDesign a real product shell: a fixed sidebar next to a scrolling main column, a sticky header row, KPI cards on one line that wrap on small screens, a filter bar, a comfortable data table with aligned numbers, hover and focus states, readable type scale, one restrained accent colour. It must look finished on a phone: below 720px the sidebar becomes a top bar and the table scrolls horizontally.\nNo utility classes, no external fonts, no imports. Output only ===FILE: app/globals.css=== followed by the stylesheet.`;
     const cssUser = `Product: ${user}\n\nThe files that use the stylesheet:\n${uiSource.slice(0, 26000)}`;
     const got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 9000, model: tm, user: cssUser })).content, ['app/globals.css']);
-    for (const f of got) if (!files.some(x => x.path === f.path)) files.push(f);
+    for (const f of got) put(f);
   }
   if (preview.length) await write(preview.map(p => p.path), previewNote);
 
@@ -265,7 +269,7 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     steps.push(`exports:${path}`);
     const system = `${BUILD_STANDARD}\n\nYou are rewriting ONE file of a Next.js 15 (TypeScript) project so other files compile against it.\nFile: ${path}\nIt must export these names, because other files already import them: ${[...names].join(', ')}.\nKeep it small, complete, typed, and consistent with the rest of the project:\n${list.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\nOutput only ===FILE: ${path}=== followed by the whole file.`;
     const got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 6000, model: tm, user: `Product: ${user}\n\nRewrite ${path} with those exports.` })).content, [path]);
-    for (const f of got) if (!files.some(x => x.path === f.path)) files.push(f);
+    for (const f of got) put(f);
   }
   // A preview is the face of the build, so make one more, deliberately small, attempt before giving up.
   if (!files.some(f => f.path === 'preview.html')) {
