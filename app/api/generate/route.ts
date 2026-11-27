@@ -119,8 +119,8 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const rest = list.filter(p => !CORE_FILE.test(p.path) && p.path !== 'preview.html');
   const groups = [...(config.length ? [config] : []), ...chunk(rest, 3), ...(preview.length ? [preview] : [])];
   const files: AppFile[] = [];
-  const write = async (paths: string[]) => {
-    const system = webFileSystem(paths, list, user);
+  const write = async (paths: string[], extra = '') => {
+    const system = webFileSystem(paths, list, user) + extra;
     const ask = `Write exactly these files now: ${paths.join(', ')}. Start with ===FILE: ${paths[0]}=== and use one ===FILE: path=== marker per file.`;
     const cap = paths.includes('preview.html') ? 20000 : 12000;
     let got: AppFile[];
@@ -135,13 +135,21 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     steps.push(`wrote:${got.length}/${paths.length}`);
     return got.map(f => f.path);
   };
-  for (const group of groups) await write(group.map(p => p.path));
+  // preview.html is a whole screen in one file, so it gets a length budget instead of free rein.
+  const previewNote = '\n\npreview.html is the live demo of this app. Keep it under 220 lines and under 14,000 characters: one screen with the KPI row, the main table with 6 sample rows, the second view, and the export button working. Inline CSS and JS only, no external requests, no frameworks. It must end with </html>.';
+  for (const group of groups) await write(group.map(p => p.path), group.some(p => p.path === 'preview.html') ? previewNote : '');
   // Anything still missing (a batch cut short, or skipped) gets one repair pass of two files at a time.
   for (let round = 0; round < 2; round++) {
     const missing = list.map(p => p.path).filter(path => !files.some(f => f.path === path));
     if (!missing.length) break;
     steps.push(`repair:${missing.length}`);
-    for (const group of chunk(missing, 2)) await write(group);
+    for (const group of chunk(missing, 2)) await write(group, group.includes('preview.html') ? previewNote : '');
+  }
+  // A preview is the face of the build, so make one more, deliberately small, attempt before giving up.
+  if (!files.some(f => f.path === 'preview.html')) {
+    steps.push('preview-fallback');
+    const tiny = await chat({ system: `${BUILD_STANDARD}\n\nWrite ONE file: a single self-contained HTML document named preview.html for the app described below. Under 120 lines. Inline CSS and JS only, no external requests, no frameworks. Show the main screen with real sample records and make the primary interactions work. Output only ===FILE: preview.html=== followed by the document, ending with </html>.`, temperature: 0.2, maxTokens: 9000, model: tm, user });
+    files.push(...partsFrom(tiny.content, ['preview.html']));
   }
   return cleanFiles(files);
 }
