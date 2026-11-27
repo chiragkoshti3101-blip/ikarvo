@@ -46,7 +46,9 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
 
 const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: what it contains and exports\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 6 to 9 files, no more. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, one app/api/**/route.ts, and lib/store.ts with the types and the data store.\n- Keep the screens in app/page.tsx (it is a client component). Add at most TWO component files, only if a screen really needs one, and say in the outline exactly which props each takes.\n- Never plan a .module.css file or any per-component stylesheet: every class lives in app/globals.css.\n- Relative paths, lowercase folders, no spaces.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
-const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Only use class names that exist in app/globals.css.
+const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.
+- The store seeds 6 to 8 plausible records for this business the first time it runs, so no screen is empty on first load, and the UI says once that they are sample records.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Give every element a semantic class name (shell, sidebar, kpi-row, data-table, ...): app/globals.css is written after your files, from the classes you use, and it will style all of them.
+- A dashboard opens with three or four KPI values computed from the records (revenue, open orders, bags/units, batches), then the filters, then the table. Not a table alone.
 - TypeScript must compile with zero errors, and nobody can run tsc for you: keep types simple. A generic component that spreads a partial row writes: { field } as unknown as Partial<T>. Do not build one generic helper that two different record types share. Sort and filter helpers take a key: string and read the value with record[key] after a local cast, or exist once per table with that table's own row type. Every function argument must match its declared signature at every call site.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
 
 function chunk<T>(xs: T[], n: number): T[][] {
@@ -185,7 +187,7 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const files: AppFile[] = [];
   const wanted = new Set(list.map(p => p.path));
   const sharedNow = () => files
-    .filter(f => f.path === 'app/globals.css' || f.path.startsWith('lib/'))
+    .filter(f => f.path.startsWith('lib/'))
     .map(f => `===FILE: ${f.path}===\n${f.content}`).join('\n\n');
   const write = async (paths: string[], extra = '') => {
     const system = webFileSystem(paths, list, user, sharedNow()) + extra;
@@ -204,7 +206,8 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   };
 
   const config = list.filter(p => CORE_FILE.test(p.path));
-  const contract = list.filter(p => p.path === 'app/globals.css' || p.path.startsWith('lib/'));
+  const contract = list.filter(p => p.path.startsWith('lib/'));
+  const stylesheet = list.find(p => p.path === 'app/globals.css');
   const api = list.filter(p => !CORE_FILE.test(p.path) && !p.path.startsWith('lib/') && p.path !== 'app/globals.css' && /^app\/api\//.test(p.path));
   const preview = list.filter(p => p.path === 'preview.html');
   const ui = list.filter(p => ![...config, ...contract, ...api, ...preview].some(x => x.path === p.path));
@@ -217,6 +220,17 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const page = ui.find(p => p.path === 'app/page.tsx');
   if (page) await write([page.path]);
   for (const group of chunk(ui.filter(p => p.path !== 'app/page.tsx').map(p => p.path), 2)) await write(group);
+  if (stylesheet) {
+    const uiSource = files.filter(f => /\.tsx$/.test(f.path)).map(f => `===FILE: ${f.path}===\n${f.content}`).join('\n\n');
+    const used = [...new Set([...uiSource.matchAll(/className=(?:"([^"]+)"|\{`([^`]+)`\}|\{"([^"]+)"\})/g)]
+      .flatMap(m => (m[1] ?? m[2] ?? m[3] ?? '').split(/\s+/))
+      .filter(c => c && !c.includes('$') && !c.includes('{') && c !== 'styles'))];
+    steps.push(`css:${used.length}`);
+    const system = `${BUILD_STANDARD}\n\nYou are writing app/globals.css for a Next.js 15 project. It is imported once in app/layout.tsx and is the ONLY stylesheet.\nThe screens are already written and use exactly these class names: ${used.join(', ') || '(none)'}.\nEvery one of them must be styled, plus base elements (html, body, buttons, inputs, table).\nDesign a real product shell: a fixed sidebar next to a scrolling main column, a sticky header row, KPI cards on one line that wrap on small screens, a filter bar, a comfortable data table with aligned numbers, hover and focus states, readable type scale, one restrained accent colour. It must look finished on a phone: below 720px the sidebar becomes a top bar and the table scrolls horizontally.\nNo utility classes, no external fonts, no imports. Output only ===FILE: app/globals.css=== followed by the stylesheet.`;
+    const cssUser = `Product: ${user}\n\nThe files that use the stylesheet:\n${uiSource.slice(0, 26000)}`;
+    const got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 9000, model: tm, user: cssUser })).content, ['app/globals.css']);
+    for (const f of got) if (!files.some(x => x.path === f.path)) files.push(f);
+  }
   if (preview.length) await write(preview.map(p => p.path), previewNote);
 
   // Repair: missing planned files first, then imports that point at nothing.
