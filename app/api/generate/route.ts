@@ -18,9 +18,9 @@ const TIER_CFG: Record<Tier, { model: () => string; maxTokens: number; plan: boo
   pro: { model: () => envValue('AI_MODEL_PRO') || envValue('AI_MODEL') || 'anthropic/claude-sonnet-4.5', maxTokens: 24000, plan: true, review: false },
   max: { model: () => envValue('AI_MODEL_MAX') || 'anthropic/claude-opus-4.1', maxTokens: 40000, plan: true, review: true },
 };
-const PLANNER = `${BUILD_STANDARD}\n\nYou are a principal product engineer. Write a concise build plan for the request: the file list with one-line purposes, screens/pages, data model, key interactions and visual direction. Plain text, under 300 words. No code.`;
+const PLANNER = `${BUILD_STANDARD}\n\nYou are a principal product engineer. Write a concise build plan for the request: the file list with one-line purposes, screens/pages, data model, key interactions, the real copy for the main headline, and one layout or content idea that comes from this specific product rather than a generic template. Plain text, under 300 words. No code.`;
 // The build prompt already carries BUILD_STANDARD, so the review pass only needs its own instruction.
-const REVIEW = `\n\nYou are now REVIEWING a previous attempt. Check it against the request and plan: fix bugs, broken imports/links, missing required files, unhandled states, accessibility and visual polish. Return the complete corrected file set in the same JSON format.`;
+const REVIEW = `\n\nYou are now REVIEWING a previous attempt. Check it against the request and plan: fix bugs, broken imports/links, missing required files, unhandled states, accessibility and visual polish. Remove anything on the DO NOT PRODUCE list (invented statistics or testimonials, placeholder copy, decorative filler) and make every screen read like this business's real product. Return the complete corrected file set in the same JSON format.`;
 
 const SYSTEM = `${BUILD_STANDARD}\n\nYou are a senior product engineer and designer. Produce one complete, production-quality, standalone HTML document for the user's app.
 Rules:

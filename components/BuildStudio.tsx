@@ -160,7 +160,7 @@ export default function BuildStudio() {
       {typePicker}
       {decideRow}
       {composer(true)}
-      <BuildIntake intake={intake} onChange={setIntake} githubOk={status.github.ok} />
+      <BuildIntake intake={intake} onChange={setIntake} githubOk={status.github.ok} prompt={draft} kind={kind} />
       <ErrorNote error={error} onClose={() => setError(null)} />
       {!status.ai.ok && <p className="small muted">No AI key on this server (needs <code>AI_API_KEY</code>). <button className="link" onClick={useStarter}>Open the hand-written starter</button> to try preview, export and deploy.</p>}
       <div className="b-chips" aria-label="Starting points">{T.chips.map(s => <button key={s.title} className="b-chip" onClick={() => setDraft(s.prompt)}><Icon name="spark" size={13} />{s.title}</button>)}</div>
@@ -216,7 +216,7 @@ export default function BuildStudio() {
         {p.html && (!p.files || kindOf(p) !== kind) && <p className="small muted b-note">Next run rebuilds this as a {TYPES[kind].label.toLowerCase()} ({TYPES[kind].hint}).</p>}
         {typePicker}
         {decideRow}
-        <BuildIntake intake={intake} onChange={setIntake} githubOk={status.github.ok} />
+        <BuildIntake intake={intake} onChange={setIntake} githubOk={status.github.ok} prompt={draft} kind={kind} />
         {composer()}
       </section>
 

@@ -12,8 +12,11 @@ Complete and runnable: every import resolves, every control does something real,
 DESIGN
 Work an experienced product team would ship: clear hierarchy, a deliberate type scale, generous spacing, consistent alignment, a restrained purposeful palette, data visualisation that informs, motion that clarifies. One small design system reused across screens. Design around the user's actual workflow and the vocabulary of their industry.
 
-DO NOT PRODUCE
-Unmotivated purple gradients, glassmorphism everywhere, floating cards, glow effects, oversized pill radii on every surface, the same sidebar-plus-KPI-cards shell for unrelated products, decorative icons or emoji as filler, generic marketing adjectives, invented statistics, placeholder charts, effects added to look advanced.
+REAL PRODUCT, NOT A DEMO
+Name the product and use its domain vocabulary everywhere — a coffee roaster has roast levels and 250g bags, not "Item" and "Category 1"; a clinic has patients, practitioners and appointment types. Every screen exists because a specific person has a job to do there, the primary action on each screen is obvious, and it works end to end. Write the copy for this business: a headline that says what it does, feature names in their words, real field labels, real empty/loading/error messages, plausible domain data labelled as sample. No lorem ipsum, no "Feature one", no leftover Sign up / Start free buttons in a product that has no sign-up, no dead links, no button that only scrolls.
+
+DO NOT PRODUCE (AI slop markers)
+Purple-to-blue gradient heroes; glass panels over blurred blobs; three identical floating cards under a hero; glow effects; every surface a large pill; emoji as icons; "Trusted by thousands" logo walls; invented statistics, customers, logos or testimonials presented as fact; a fake dashboard of decorative sparkline cards; decorative animation that explains nothing; the same sidebar + four KPI cards + one area chart shell for unrelated products; stock imagery that may not load; centered hero + three features + CTA used as the default shape of every page. If a layout is the first thing a generator would produce, derive a different one from the content — the thing this product uniquely shows or lets you do. Say something specific instead of something impressive.
 
 DASHBOARDS
 Start from who uses it and what they decide. Then: metrics that mean something to this business, clear navigation and search, filters, real tables, contextual actions, role awareness, loading/empty/error states, a mobile layout. Sample data must be labelled as sample and plausible for the domain; never present invented numbers as real business data, and never wire up a "connected" integration that does not exist.
