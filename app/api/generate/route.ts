@@ -47,7 +47,7 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
 const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: what it contains and exports\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 6 to 9 files, no more. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, one app/api/**/route.ts, and lib/store.ts with the types and the data store.\n- Keep the screens in app/page.tsx (it is a client component). Add at most TWO component files, only if a screen really needs one, and say in the outline exactly which props each takes.\n- Never plan a .module.css file or any per-component stylesheet: every class lives in app/globals.css.\n- Relative paths, lowercase folders, no spaces.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
 const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.
-- Call only the API routes that appear in the file list above, with exactly those paths. If you need two resources, either use one route with a query parameter or list both routes.
+- Call only the API routes that appear in the file list above, with exactly those paths.\n- Any component whose source is included above is already written: import it exactly as exported and pass only the props its source declares. If it does not fit what the page needs, render that markup inline instead of inventing props. If you need two resources, either use one route with a query parameter or list both routes.
 - The store seeds 6 to 8 plausible records for this business the first time it runs, so no screen is empty on first load, and the UI says once that they are sample records.
 - The JSON store must also work on a read-only serverless filesystem, because this project is meant to deploy as-is: resolve its directory with process.env.VERCEL ? '/tmp/data' : path.join(process.cwd(), 'data'), create it before writing, and never assume a write succeeded without awaiting it. Seeding happens inside the store, so a fresh instance still shows records.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Give every element a semantic class name (shell, sidebar, kpi-row, data-table, ...): app/globals.css is written after your files, from the classes you use, and it will style all of them.
 - A dashboard opens with three or four KPI values computed from the records (revenue, open orders, bags/units, batches), then the filters, then the table. Not a table alone.
@@ -196,7 +196,7 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   const files: AppFile[] = [];
   const wanted = new Set(list.map(p => p.path));
   const sharedNow = () => files
-    .filter(f => f.path.startsWith('lib/'))
+    .filter(f => f.path.startsWith('lib/') || /(^|\/)components\//.test(f.path))
     .map(f => `===FILE: ${f.path}===\n${f.content}`).join('\n\n');
   const put = (f: AppFile) => {
     const i = files.findIndex(x => x.path === f.path);
@@ -219,9 +219,9 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
   };
 
   const config = list.filter(p => CORE_FILE.test(p.path));
-  const contract = list.filter(p => p.path.startsWith('lib/'));
+  const contract = list.filter(p => p.path.startsWith('lib/') || /(^|\/)components\//.test(p.path));
   const stylesheet = list.find(p => p.path === 'app/globals.css');
-  const api = list.filter(p => !CORE_FILE.test(p.path) && !p.path.startsWith('lib/') && p.path !== 'app/globals.css' && /^app\/api\//.test(p.path));
+  const api = list.filter(p => !CORE_FILE.test(p.path) && !p.path.startsWith('lib/') && !/(^|\/)components\//.test(p.path) && p.path !== 'app/globals.css' && /^app\/api\//.test(p.path));
   const preview = list.filter(p => p.path === 'preview.html');
   const ui = list.filter(p => ![...config, ...contract, ...api, ...preview].some(x => x.path === p.path));
   const previewNote = '\n\npreview.html is the live demo of this app. Keep it under 220 lines and under 14,000 characters: one screen with the KPI row, the main table with 6 sample rows, the second view, and the export button working. Inline CSS and JS only, no external requests, no frameworks. It must end with </html>.';
