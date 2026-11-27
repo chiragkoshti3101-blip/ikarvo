@@ -44,9 +44,9 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
   { path: 'app/api/data/route.ts', purpose: 'read and write records' },
 ];
 
-const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: purpose\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 8 to 14 files. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, at least one app/api/**/route.ts, and lib/ with the typed data store.\n- Add only the components and screens this product actually needs. Relative paths, lowercase folders, no spaces.\n- No CSS framework is installed (no Tailwind): the design lives in app/globals.css as real class names.\n- preview.html is one self-contained HTML document that renders the main screens.`;
+const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: what it contains and exports\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 6 to 9 files, no more. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, one app/api/**/route.ts, and lib/store.ts with the types and the data store.\n- Keep the screens in app/page.tsx (it is a client component). Add at most TWO component files, only if a screen really needs one, and say in the outline exactly which props each takes.\n- Never plan a .module.css file or any per-component stylesheet: every class lives in app/globals.css.\n- Relative paths, lowercase folders, no spaces.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
-const webFileSystem = (paths: string[], outline: OutlinePart[], note = '') => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\nThe product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve, every component and export used exists in the file list above, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' on components that use state, effects, events or browser APIs. Do not import next/image, next/font or any package that is not in package.json.\n- Data access: lib/ holds the store with typed helpers; API routes validate input, return JSON and set status codes; client code calls those routes.\n- No CSS framework is installed: no Tailwind, no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Write real class names in app/globals.css and use those className values.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
+const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Only use class names that exist in app/globals.css.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
 
 function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -58,8 +58,8 @@ function chunk<T>(xs: T[], n: number): T[][] {
 function looksComplete(path: string, content: string): boolean {
   const body = content.trim();
   if (!body) return false;
-  if (/\\.html?$/i.test(path)) return /<\/html>\s*$/i.test(body);
-  if (/\\.json$/i.test(path)) { try { JSON.parse(body); return true; } catch { return false; } }
+  if (/\.html?$/i.test(path)) return /<\/html>\s*$/i.test(body);
+  if (/\.json$/i.test(path)) { try { JSON.parse(body); return true; } catch { return false; } }
   const count = (re: RegExp) => (body.match(re) || []).length;
   const braces = count(/\{/g) - count(/\}/g);
   const parens = count(/\(/g) - count(/\)/g);
@@ -89,6 +89,29 @@ function partsFrom(text: string, wanted: string[]): AppFile[] {
   return out;
 }
 
+/** Every name a file exports, so importers can be checked without a compiler. */
+function exportsOf(content: string) {
+  const names = new Set<string>();
+  for (const m of content.matchAll(/export\s+(?:declare\s+)?(?:default\s+)?(?:async\s+)?(?:function|const|let|var|class|type|interface|enum)\s+([A-Za-z0-9_$]+)/g)) names.add(m[1]);
+  for (const m of content.matchAll(/export\s*\{([^}]+)\}/g)) for (const part of m[1].split(',')) {
+    const name = part.trim().split(/\s+as\s+/).pop()?.trim();
+    if (name) names.add(name);
+  }
+  if (/export\s+default/.test(content)) names.add('default');
+  return names;
+}
+
+/** Resolve a relative import against the project files (with and without extensions). */
+function resolveImport(from: string, spec: string, files: AppFile[]) {
+  const base = from.split('/').slice(0, -1);
+  for (const part of spec.replace(/^\.\//, '').split('/')) {
+    if (part === '..') base.pop(); else if (part && part !== '.') base.push(part);
+  }
+  const target = base.join('/');
+  const hit = files.find(f => f.path === target || f.path === `${target}.ts` || f.path === `${target}.tsx` || f.path === `${target}/index.ts` || f.path === `${target}/index.tsx`);
+  return { target, hit };
+}
+
 /** Plan the project, then write it in batches small enough that no reply is cut off, retrying only what is missing. */
 async function webProject(opts: { user: string; maxTokens: number; tm: string; temperature: number; steps: string[] }) {
   const { user, tm, temperature, steps } = opts;
@@ -97,7 +120,7 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     const outlineRes = await chat({ system: WEB_OUTLINE, temperature: 0.2, maxTokens: 1600, model: tm, user });
     raw = outlineRes.content.split('\n').map(line => {
       const m = line.match(/^[\s\-*\d.)]*`?([A-Za-z0-9_\-./]+\.(?:tsx|ts|css|json|html|md))`?\s*(?:::|—|-)?\s*(.*)$/);
-      return m ? { path: m[1], purpose: m[2].trim().slice(0, 160) } : null;
+      return m ? { path: m[1], purpose: m[2].trim().slice(0, 200) } : null;
     }).filter((p): p is OutlinePart => !!p);
     steps.push('outline');
   } catch (e) {
@@ -113,37 +136,78 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     seen.add(path); outline.push({ path, purpose: String(p?.purpose ?? '') || 'product file' });
   }
   for (const path of REQUIRED_WEB) if (!seen.has(path)) { seen.add(path); outline.push({ path, purpose: 'required project file' }); }
-  const list = outline.slice(0, 16);
-  const config = list.filter(p => CORE_FILE.test(p.path));
-  const preview = list.filter(p => p.path === 'preview.html');
-  const rest = list.filter(p => !CORE_FILE.test(p.path) && p.path !== 'preview.html');
-  const groups = [...(config.length ? [config] : []), ...chunk(rest, 3), ...(preview.length ? [preview] : [])];
+  const list = outline.slice(0, 14);
   const files: AppFile[] = [];
+  const wanted = new Set(list.map(p => p.path));
+  const sharedNow = () => files
+    .filter(f => f.path === 'app/globals.css' || f.path.startsWith('lib/'))
+    .map(f => `===FILE: ${f.path}===\n${f.content}`).join('\n\n');
   const write = async (paths: string[], extra = '') => {
-    const system = webFileSystem(paths, list, user) + extra;
+    const system = webFileSystem(paths, list, user, sharedNow()) + extra;
     const ask = `Write exactly these files now: ${paths.join(', ')}. Start with ===FILE: ${paths[0]}=== and use one ===FILE: path=== marker per file.`;
-    const cap = paths.includes('preview.html') ? 20000 : 12000;
+    const cap = paths.includes('preview.html') ? 20000 : 14000;
     let got: AppFile[];
     try { got = partsFrom((await chat({ system, temperature, maxTokens: cap, model: tm, user: ask })).content, paths); }
     catch (e) {
       if (!(e instanceof AiError)) throw e;
-      // One tighter retry: a provider that chokes on a big request usually answers a smaller one.
       steps.push('retry-smaller');
-      got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 6000, model: tm, user: ask })).content, paths);
+      got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 7000, model: tm, user: ask })).content, paths);
     }
-    files.push(...got);
+    for (const f of got) if (wanted.has(f.path) && !files.some(x => x.path === f.path)) files.push(f);
     steps.push(`wrote:${got.length}/${paths.length}`);
     return got.map(f => f.path);
   };
-  // preview.html is a whole screen in one file, so it gets a length budget instead of free rein.
+
+  const config = list.filter(p => CORE_FILE.test(p.path));
+  const contract = list.filter(p => p.path === 'app/globals.css' || p.path.startsWith('lib/'));
+  const api = list.filter(p => !CORE_FILE.test(p.path) && !p.path.startsWith('lib/') && p.path !== 'app/globals.css' && /^app\/api\//.test(p.path));
+  const preview = list.filter(p => p.path === 'preview.html');
+  const ui = list.filter(p => ![...config, ...contract, ...api, ...preview].some(x => x.path === p.path));
   const previewNote = '\n\npreview.html is the live demo of this app. Keep it under 220 lines and under 14,000 characters: one screen with the KPI row, the main table with 6 sample rows, the second view, and the export button working. Inline CSS and JS only, no external requests, no frameworks. It must end with </html>.';
-  for (const group of groups) await write(group.map(p => p.path), group.some(p => p.path === 'preview.html') ? previewNote : '');
-  // Anything still missing (a batch cut short, or skipped) gets one repair pass of two files at a time.
+
+  if (config.length) await write(config.map(p => p.path));
+  if (contract.length) await write(contract.map(p => p.path));
+  for (const group of chunk(api.map(p => p.path), 2)) await write(group);
+  // app/page.tsx is the whole product UI, so it always gets a call of its own.
+  const page = ui.find(p => p.path === 'app/page.tsx');
+  if (page) await write([page.path]);
+  for (const group of chunk(ui.filter(p => p.path !== 'app/page.tsx').map(p => p.path), 2)) await write(group);
+  if (preview.length) await write(preview.map(p => p.path), previewNote);
+
+  // Repair: missing planned files first, then imports that point at nothing.
   for (let round = 0; round < 2; round++) {
     const missing = list.map(p => p.path).filter(path => !files.some(f => f.path === path));
     if (!missing.length) break;
     steps.push(`repair:${missing.length}`);
     for (const group of chunk(missing, 2)) await write(group, group.includes('preview.html') ? previewNote : '');
+  }
+  for (let round = 0; round < 2; round++) {
+    const broken: { path: string; spec: string; from: string }[] = [];
+    for (const f of files) for (const m of f.content.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
+      const { target, hit } = resolveImport(f.path, m[1], files);
+      if (!hit) broken.push({ path: target, spec: m[1], from: f.path });
+    }
+    if (!broken.length) break;
+    const want = [...new Set(broken.map(b => b.path))].slice(0, 3);
+    steps.push(`imports:${broken.length}`);
+    for (const path of want) await write([path]);
+  }
+  // Repair: a module imported for a name it does not export.
+  const need = new Map<string, Set<string>>();
+  for (const f of files) for (const m of f.content.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+['"](\.[^'"]+)['"]/g)) {
+    const { hit } = resolveImport(f.path, m[2], files);
+    if (!hit) continue;
+    const have = exportsOf(hit.content);
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/)[0]?.trim();
+      if (name && !have.has(name)) (need.get(hit.path) ?? need.set(hit.path, new Set()).get(hit.path)!).add(name);
+    }
+  }
+  for (const [path, names] of need) {
+    steps.push(`exports:${path}`);
+    const system = `${BUILD_STANDARD}\n\nYou are rewriting ONE file of a Next.js 15 (TypeScript) project so other files compile against it.\nFile: ${path}\nIt must export these names, because other files already import them: ${[...names].join(', ')}.\nKeep it small, complete, typed, and consistent with the rest of the project:\n${list.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\nOutput only ===FILE: ${path}=== followed by the whole file.`;
+    const got = partsFrom((await chat({ system, temperature: 0.2, maxTokens: 6000, model: tm, user: `Product: ${user}\n\nRewrite ${path} with those exports.` })).content, [path]);
+    for (const f of got) if (!files.some(x => x.path === f.path)) files.push(f);
   }
   // A preview is the face of the build, so make one more, deliberately small, attempt before giving up.
   if (!files.some(f => f.path === 'preview.html')) {
