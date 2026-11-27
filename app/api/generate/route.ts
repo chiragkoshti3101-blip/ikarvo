@@ -47,7 +47,7 @@ const DEFAULT_WEB_FILES: OutlinePart[] = [
 const WEB_OUTLINE = `${BUILD_STANDARD}\n\nYou plan a Next.js 15 (App Router, TypeScript, React 19) product before it is written.\nList the files, one per line, exactly as: path :: what it contains and exports\nNo heading, no numbering, no markdown, no code, no commentary.\nRules:\n- 6 to 9 files, no more. Required: package.json, tsconfig.json, app/layout.tsx, app/page.tsx, app/globals.css, preview.html, one app/api/**/route.ts, and lib/store.ts with the types and the data store.\n- Keep the screens in app/page.tsx (it is a client component). Add at most TWO component files, only if a screen really needs one, and say in the outline exactly which props each takes.\n- Never plan a .module.css file or any per-component stylesheet: every class lives in app/globals.css.\n- Relative paths, lowercase folders, no spaces.\n- preview.html is one self-contained HTML document that renders the main screens.`;
 
 const webFileSystem = (paths: string[], outline: OutlinePart[], note: string, shared: string) => `${BUILD_STANDARD}\n\nYou are writing part of a Next.js 15 (App Router, TypeScript, React 19) project.\nThe complete file list is:\n${outline.map(p => `- ${p.path}: ${p.purpose}`).join('\n')}\n\n${shared ? `These files are already written and their exports are final. Import from them exactly as they are; do not redefine or rename anything:\n${shared}\n\n` : ''}The product request:\n${note}\n\nOutput format — repeat this block once per file, with nothing before, between or after the files:\n===FILE: path===\n<the complete file content>\n===FILE: next-path===\n\nWrite exactly these files now: ${paths.join(', ')}.\nRules:\n- Every file is complete: all imports resolve against the files above, every name you import exists, nothing is a TODO or placeholder.\n- No comments in code. Compact but readable; this is a real product, not a sketch.\n- 'use client' at the top of app/page.tsx and of any component that uses state, effects, events or browser APIs.\n- Do not import .module.css, next/image, next/font, or any package that is not in package.json.\n- Data access: lib/store.ts holds the types and the store; API routes validate input, return JSON and set status codes; the page fetches those routes.\n- No CSS framework is installed: no Tailwind and no utility classes such as flex, grid, bg-emerald-600 or p-4 — they do nothing here. Only use class names that exist in app/globals.css.
-- TypeScript must compile with zero errors, and nobody can run tsc for you: keep types simple. Do not build one generic helper that two different record types share. Sort and filter helpers take a key: string and read the value with record[key] after a local cast, or exist once per table with that table's own row type. Every function argument must match its declared signature at every call site.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
+- TypeScript must compile with zero errors, and nobody can run tsc for you: keep types simple. A generic component that spreads a partial row writes: { field } as unknown as Partial<T>. Do not build one generic helper that two different record types share. Sort and filter helpers take a key: string and read the value with record[key] after a local cast, or exist once per table with that table's own row type. Every function argument must match its declared signature at every call site.\n- preview.html is ONE self-contained HTML document (inline CSS and JS, no external scripts) that faithfully renders the main screens with working client-side interactions. It is the live preview.\nBegin with ===FILE: ${paths[0]}===`;
 
 function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -111,6 +111,50 @@ function resolveImport(from: string, spec: string, files: AppFile[]) {
   const target = base.join('/');
   const hit = files.find(f => f.path === target || f.path === `${target}.ts` || f.path === `${target}.tsx` || f.path === `${target}/index.ts` || f.path === `${target}/index.tsx`);
   return { target, hit };
+}
+
+/** The relative path from one file to another, without the extension. */
+function relPath(fromFile: string, toPath: string) {
+  const fromDir = fromFile.split('/').slice(0, -1);
+  const to = toPath.split('/');
+  const file = (to.pop() ?? '').replace(/\.(tsx|ts|jsx|js)$/, '');
+  let i = 0;
+  while (i < fromDir.length && i < to.length && fromDir[i] === to[i]) i++;
+  const parts = [...Array(fromDir.length - i).fill('..'), ...to.slice(i), file];
+  const rel = parts.join('/');
+  return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+/**
+ * Models get relative depth wrong (../../lib/store from app/api/x) and use aliases the tsconfig may not define.
+ * Both are mechanical to fix, so fix them here instead of paying for another model call.
+ */
+function fixImports(files: AppFile[]): number {
+  let fixed = 0;
+  for (const f of files) {
+    f.content = f.content.replace(/(from\s+['"])([^'"]+)(['"])/g, (whole, pre: string, spec: string, post: string) => {
+      if (!/^(\.{1,2}\/|@\/)/.test(spec)) return whole;
+      const want = spec.startsWith('@/') ? spec.slice(2) : spec;
+      const direct = resolveImport(f.path, want, files);
+      if (direct.hit) {
+        const rel = relPath(f.path, direct.hit.path);
+        if (rel === spec) return whole;
+        fixed++;
+        return `${pre}${rel}${post}`;
+      }
+      const base = want.split('/').pop()!.replace(/\.(tsx|ts|jsx|js)$/, '');
+      const candidates = files.filter(x => x.path !== f.path && (x.path.split('/').pop() ?? '').replace(/\.(tsx|ts|jsx|js)$/, '') === base);
+      if (candidates.length === 1) {
+        fixed++;
+        return `${pre}${relPath(f.path, candidates[0].path)}${post}`;
+      }
+      return whole;
+    });
+  }
+  // A generic component spreading a partial row trips the compiler's overlap check; the cast through unknown is the
+  // intended escape hatch and changes no behaviour.
+  for (const f of files) f.content = f.content.replace(/(?<!unknown )as Partial<([^>]+)>/g, 'as unknown as Partial<$1>');
+  return fixed;
 }
 
 /** Plan the project, then write it in batches small enough that no reply is cut off, retrying only what is missing. */
@@ -182,17 +226,8 @@ async function webProject(opts: { user: string; maxTokens: number; tm: string; t
     steps.push(`repair:${missing.length}`);
     for (const group of chunk(missing, 2)) await write(group, group.includes('preview.html') ? previewNote : '');
   }
-  for (let round = 0; round < 2; round++) {
-    const broken: { path: string; spec: string; from: string }[] = [];
-    for (const f of files) for (const m of f.content.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
-      const { target, hit } = resolveImport(f.path, m[1], files);
-      if (!hit) broken.push({ path: target, spec: m[1], from: f.path });
-    }
-    if (!broken.length) break;
-    const want = [...new Set(broken.map(b => b.path))].slice(0, 3);
-    steps.push(`imports:${broken.length}`);
-    for (const path of want) await write([path]);
-  }
+  const rewritten = fixImports(files);
+  if (rewritten) steps.push(`imports:${rewritten}`);
   // Repair: a module imported for a name it does not export.
   const need = new Map<string, Set<string>>();
   for (const f of files) for (const m of f.content.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+['"](\.[^'"]+)['"]/g)) {
